@@ -78,7 +78,7 @@ function createOPFilterButton() {
 
     const button = document.createElement('a');
     button.id = 'op-filter-button';
-    button.href = '#';
+    button.href = 'javascript:void(0)';
     button.className = 'button--link button';
     button.setAttribute('aria-pressed', 'false');
     button.title = 'Show Only OP Posts';
@@ -142,11 +142,15 @@ function ensureButtonAdded() {
 chrome.storage.local.get(['isOPOnly'], (result) => {
     isOPOnly = result.isOPOnly || false;
     if (isOPOnly) {
-        // Wait for posts to load before applying filter
+        // Wait for posts to load before applying filter with throttling
+        let stateThrottled = false;
         const stateObserver = new MutationObserver((mutations, obs) => {
-            if (document.querySelector('.message--post')) {
-                toggleOPPosts();
-                obs.disconnect();
+            if (!stateThrottled && document.querySelector('.message--post')) {
+                stateThrottled = true;
+                requestAnimationFrame(() => {
+                    toggleOPPosts();
+                    obs.disconnect();
+                });
             }
         });
 
@@ -164,12 +168,20 @@ if (document.readyState === 'loading') {
     ensureButtonAdded();
 }
 
-// Also try to initialize when new content is loaded
+// Also try to initialize when new content is loaded with throttling
+let contentThrottled = false;
 const contentObserver = new MutationObserver((mutations) => {
-    for (const mutation of mutations) {
-        if (mutation.addedNodes.length) {
-            ensureButtonAdded();
-        }
+    if (!contentThrottled) {
+        contentThrottled = true;
+        requestAnimationFrame(() => {
+            for (const mutation of mutations) {
+                if (mutation.addedNodes.length) {
+                    ensureButtonAdded();
+                    break;
+                }
+            }
+            setTimeout(() => { contentThrottled = false; }, 100);
+        });
     }
 });
 

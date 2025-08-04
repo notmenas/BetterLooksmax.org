@@ -190,10 +190,15 @@ function showPublicModeNotification() {
         z-index: 10001;
         transition: opacity 0.5s ease;
     `;
-    notification.innerHTML = `
-        Public Mode Activated<br>
-        <small>Hover over blurred content to reveal temporarily</small>
-    `;
+    // Create notification content safely
+    const mainText = document.createTextNode('Public Mode Activated');
+    const br = document.createElement('br');
+    const small = document.createElement('small');
+    small.textContent = 'Hover over blurred content to reveal temporarily';
+    
+    notification.appendChild(mainText);
+    notification.appendChild(br);
+    notification.appendChild(small);
     
     document.body.appendChild(notification);
     
@@ -208,9 +213,8 @@ function showPublicModeNotification() {
 
 function createPublicModeButton() {
     const button = document.createElement('a');
-    button.href = '#';
+    button.href = 'javascript:void(0)';
     button.className = 'p-navgroup-link p-navgroup-link--iconic';
-    button.setAttribute('data-xf-click', 'overlay');
     button.setAttribute('title', 'Public Mode - Hide identifying content');
     button.setAttribute('aria-label', 'Public Mode - Hide identifying content');
 

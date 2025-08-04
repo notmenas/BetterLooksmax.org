@@ -13,7 +13,7 @@ chrome.storage.local.get(['isGreyUsersHidden'], (result) => {
 
 function hideGreyThreads() {
     console.log('Hiding grey threads...');
-    const threadContainers = document.querySelectorAll('.structItem');
+    const threadContainers = document.querySelectorAll('.structItem:not(.hidden-grey-user)');
     console.log('Found thread containers:', threadContainers.length);
 
     threadContainers.forEach(thread => {
@@ -35,7 +35,7 @@ function hideGreyThreads() {
 
 function hideGreyPosts() {
     console.log('Hiding grey posts...');
-    const messageContainers = document.querySelectorAll('.message');
+    const messageContainers = document.querySelectorAll('.message:not(.hidden-grey-user)');
     console.log('Found message containers:', messageContainers.length);
 
     messageContainers.forEach(message => {
@@ -54,7 +54,7 @@ function hideGreyPosts() {
 
 function hideGreyMembers() {
     console.log('Hiding grey members...');
-    const memberListItems = document.querySelectorAll('.listInline--comma li');
+    const memberListItems = document.querySelectorAll('.listInline--comma li:not(.hidden-grey-user)');
     console.log('Found member list items:', memberListItems.length);
 
     memberListItems.forEach(item => {
@@ -135,18 +135,23 @@ function toggleGreyUsers() {
 
 function createGreyUsersButton() {
     const button = document.createElement('a');
-    button.href = '#';
+    button.href = 'javascript:void(0)';
     button.className = 'p-navgroup-link p-navgroup-link--iconic grey-users-button';
-    button.setAttribute('data-xf-click', 'overlay');
     button.setAttribute('title', 'Hide Grey Users');
     button.setAttribute('aria-label', 'Hide Grey Users');
-    button.innerHTML = `<i class="fas fa-user-slash" style="font-size: 16px;"></i>`;
+    const icon = document.createElement('i');
+    icon.className = 'fas fa-user-slash';
+    icon.style.fontSize = '16px';
+    button.appendChild(icon);
     button.addEventListener('click', (e) => {
         e.preventDefault();
         toggleGreyUsers();
     });
     return button;
 }
+
+let addGreyUsersButtonRetries = 0;
+const MAX_RETRIES = 10;
 
 function addGreyUsersButton() {
     // Try different possible selectors for the navigation group
@@ -160,8 +165,13 @@ function addGreyUsersButton() {
     console.log('Current URL:', window.location.href);
     
     if (!navGroup) {
-        console.log('Navigation group not found, retrying in 1 second...');
-        setTimeout(addGreyUsersButton, 1000);
+        if (addGreyUsersButtonRetries < MAX_RETRIES) {
+            addGreyUsersButtonRetries++;
+            console.log(`Navigation group not found, retry ${addGreyUsersButtonRetries}/${MAX_RETRIES}...`);
+            setTimeout(addGreyUsersButton, 1000);
+        } else {
+            console.log('Max retries reached, stopping attempts to add grey users button');
+        }
         return;
     }
     
@@ -198,24 +208,52 @@ function addGreyUsersButton() {
     });
 }
 
-// Create observer to handle dynamically added content
+// Create observer to handle dynamically added content with throttling
+let greyThrottled = false;
+let isProcessingMutation = false;
 const greyContentObserver = new MutationObserver((mutations) => {
-    if (isGreyUsersHidden) {
-        mutations.forEach(mutation => {
-            if (mutation.addedNodes.length) {
+    if (isGreyUsersHidden && !greyThrottled && !isProcessingMutation) {
+        greyThrottled = true;
+        requestAnimationFrame(() => {
+            // Check if any relevant nodes were actually added
+            let hasRelevantNodes = false;
+            for (const mutation of mutations) {
+                if (mutation.addedNodes.length) {
+                    for (const node of mutation.addedNodes) {
+                        if (node.nodeType === Node.ELEMENT_NODE && 
+                            (node.classList?.contains('structItem') || 
+                             node.classList?.contains('message') ||
+                             node.querySelector?.('.structItem, .message'))) {
+                            hasRelevantNodes = true;
+                            break;
+                        }
+                    }
+                }
+                if (hasRelevantNodes) break;
+            }
+            
+            if (hasRelevantNodes) {
+                isProcessingMutation = true;
                 hideGreyThreads();
                 hideGreyPosts();
                 hideGreyMembers();
+                setTimeout(() => { isProcessingMutation = false; }, 50);
             }
+            setTimeout(() => { greyThrottled = false; }, 100);
         });
     }
 });
 
-// Also add a mutation observer specifically for the navigation group
+// Also add a mutation observer specifically for the navigation group with throttling
+let navThrottled = false;
 const navObserver = new MutationObserver((mutations) => {
-    if (!document.querySelector('.grey-users-button')) {
-        console.log('Navigation changed, attempting to add grey users button');
-        addGreyUsersButton();
+    if (!document.querySelector('.grey-users-button') && !navThrottled) {
+        navThrottled = true;
+        requestAnimationFrame(() => {
+            console.log('Navigation changed, attempting to add grey users button');
+            addGreyUsersButton();
+            setTimeout(() => { navThrottled = false; }, 100);
+        });
     }
 });
 
@@ -230,4 +268,17 @@ if (document.readyState === 'loading') {
     addGreyUsersButton();
     greyContentObserver.observe(document.body, { childList: true, subtree: true });
     navObserver.observe(document.body, { childList: true, subtree: true });
+}
+
+// Expose functions for testing
+if (typeof global !== 'undefined') {
+    global.hideGreyThreads = hideGreyThreads;
+    global.hideGreyPosts = hideGreyPosts;
+    global.hideGreyMembers = hideGreyMembers;
+    global.applyGreyUserStyles = applyGreyUserStyles;
+    global.removeGreyUserStyles = removeGreyUserStyles;
+    global.toggleGreyUsers = toggleGreyUsers;
+    global.createGreyUsersButton = createGreyUsersButton;
+    global.addGreyUsersButton = addGreyUsersButton;
+    global.isGreyUsersHidden = isGreyUsersHidden;
 }
