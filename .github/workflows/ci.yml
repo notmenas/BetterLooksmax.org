@@ -116,6 +116,8 @@ jobs:
             "custom-upload.js"
             "button-styles.js"
             "privacy-dropdown.js"
+            "privacy-buttons.js"
+            "privacy-buttons-simple.js"
             "debug-buttons.js"
           )
           
