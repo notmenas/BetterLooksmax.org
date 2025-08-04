@@ -873,7 +873,17 @@ function createPresetButton() {
                     border: 1px solid #333;
                 `;
                 
-                const shortcutText = preset.shortcut ? `<span style="color: #888; font-size: 12px; margin-left: 10px;">${preset.shortcut}</span>` : '';
+                // SECURITY FIX: Escape HTML to prevent XSS
+                function escapeHtml(unsafe) {
+                    return unsafe
+                        .replace(/&/g, "&amp;")
+                        .replace(/</g, "&lt;")
+                        .replace(/>/g, "&gt;")
+                        .replace(/"/g, "&quot;")
+                        .replace(/'/g, "&#039;");
+                }
+                
+                const shortcutText = preset.shortcut ? `<span style="color: #888; font-size: 12px; margin-left: 10px;">${escapeHtml(preset.shortcut)}</span>` : '';
                 const isDefaultPreset = TEXT_PRESETS[id] !== undefined;
                 const presetType = isDefaultPreset ? '<span style="color: #666; font-size: 11px;">(default)</span>' : '<span style="color: #4a9eff; font-size: 11px;">(custom)</span>';
                 
@@ -1248,6 +1258,7 @@ function createPresetButton() {
                 
                 shortcutItem.appendChild(nameDiv);
                 shortcutItem.appendChild(inputDiv);
+
                 
                 shortcutsList.appendChild(shortcutItem);
                 

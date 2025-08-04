@@ -698,12 +698,14 @@
             }
             if (totalMinutes < 1) {
                 showNotification('Minimum time limit is 1 minute', 'warning');
+
                 return;
             }
             
             const newSettings = {
                 dailyLimit: (hours * 3600) + (minutes * 60),
                 warningTime: parseInt(document.getElementById('warning-time-input').value) * 60,
+
                 enabled: document.getElementById('enabled-checkbox').checked
             };
             
