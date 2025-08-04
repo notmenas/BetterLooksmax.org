@@ -31,8 +31,6 @@ bower_components
 # node_modules (if using npm for build tools)
 node_modules/
 
-# npm package-lock.json (consider keeping this for consistency)
-package-lock.json
 
 # Yarn Integrity file
 .yarn-integrity

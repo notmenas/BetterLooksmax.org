@@ -87,10 +87,10 @@
                 
                 // Additional filters for specific cases
                 cleanCSS = cleanCSS
-                    // Remove any external URLs except trusted CDNs
-                    .replace(/url\s*\(\s*["']?(https?:\/\/(?!(fonts\.googleapis\.com|fonts\.gstatic\.com|cdnjs\.cloudflare\.com|cdn\.jsdelivr\.net|i\.imgur\.com))[^"')]+)["']?\s*\)/gi, 'url()')
-                    // Allow @import only from trusted sources
-                    .replace(/@import\s+(?!.*(?:fonts\.googleapis\.com|fonts\.gstatic\.com|cdnjs\.cloudflare\.com|cdn\.jsdelivr\.net))[^;]+;/gi, '')
+                    // Remove ALL external URLs - only allow relative paths and data URIs for images
+                    .replace(/url\s*\(\s*["']?(https?:\/\/[^"')]+)["']?\s*\)/gi, 'url()')
+                    // Remove ALL @import statements for security
+                    .replace(/@import\s+[^;]+;/gi, '/* @import removed for security */')
                     // Remove data URIs that aren't images
                     .replace(/url\s*\(\s*["']?data:(?!image\/(?:png|jpg|jpeg|gif|webp|svg\+xml))[^"')]*["']?\s*\)/gi, 'url()');
                 
@@ -287,32 +287,6 @@
             return true;
         },
         
-        /**
-         * Sanitize HTML content to prevent XSS
-         * @param {string} html - Raw HTML input
-         * @returns {string} - Sanitized HTML
-         */
-        sanitizeHTML: function(html) {
-            if (!html || typeof html !== 'string') {
-                return '';
-            }
-            
-            try {
-                // Use DOMPurify to sanitize HTML
-                return DOMPurify.sanitize(html, {
-                    ALLOWED_TAGS: ['p', 'div', 'span', 'a', 'b', 'i', 'u', 'em', 'strong', 
-                                   'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'br', 'hr',
-                                   'ul', 'ol', 'li', 'blockquote', 'code', 'pre',
-                                   'article', 'section', 'nav', 'header', 'footer', 'main'],
-                    ALLOWED_ATTR: ['href', 'title', 'class', 'id'],
-                    ALLOW_DATA_ATTR: false,
-                    SAFE_FOR_TEMPLATES: true
-                });
-            } catch (error) {
-                console.error('BetterLooksmax Sanitizer: HTML sanitization failed', error);
-                return '';
-            }
-        },
         
         /**
          * Sanitize plain text by escaping HTML entities

@@ -6,8 +6,7 @@
     
     "permissions": [
         "activeTab",
-        "storage",
-        "tabs"
+        "storage"
     ],
     
     "host_permissions": [
@@ -25,6 +24,10 @@
         "service_worker": "background.js"
     },
     
+    "content_security_policy": {
+        "extension_pages": "script-src 'self'; object-src 'none'; style-src 'self'; font-src 'self' data:; img-src 'self' data: https://looksmax.org https://forum.looksmaxxing.com https://lookism.cc; connect-src 'self' https://looksmax.org https://forum.looksmaxxing.com https://lookism.cc"
+    },
+    
     "content_scripts": [
         {
             "matches": [
@@ -33,8 +36,16 @@
                 "https://lookism.cc/*"
             ],
             "js": [
+                "message-constants.js",
+                "custom-upload.js",
+                "browser-api.js",
                 "libs/purify.min.js",
                 "sanitizer.js",
+                "storage-validator.js",
+                "security-utils.js",
+                "performance-utils.js",
+                "button-styles.js",
+                "privacy-buttons-simple.js",
                 "content.js", 
                 "greyfilter.js", 
                 "nsfwfilter.js", 
@@ -44,7 +55,7 @@
                 "text-presets.js", 
                 "timer.js"
             ],
-            "run_at": "document_idle"
+            "run_at": "document_start"
         }
     ]
 }

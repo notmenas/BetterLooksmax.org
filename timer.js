@@ -1,6 +1,88 @@
 (function() {
     'use strict';
     
+    // Use the cross-browser API wrapper
+    const timerAPI = (typeof BrowserAPI !== 'undefined') ? BrowserAPI : 
+                     (typeof browser !== 'undefined') ? browser : chrome;
+
+    // Message constants - wait for them to be available
+    function waitForMessageConstants() {
+        return new Promise((resolve) => {
+            if (window.BetterLooksmaxMessages) {
+                resolve();
+            } else {
+                const checkInterval = setInterval(() => {
+                    if (window.BetterLooksmaxMessages) {
+                        clearInterval(checkInterval);
+                        resolve();
+                    }
+                }, 10);
+            }
+        });
+    }
+
+    // Register with message router for bidirectional sync
+    async function registerWithMessageRouter() {
+        await waitForMessageConstants();
+        
+        if (window.BetterLooksmaxRouter) {
+            window.BetterLooksmaxRouter.registerFeature('timer', handleMessage);
+            console.log('[Timer] Registered with message router');
+        } else {
+            // Wait for router to be available
+            setTimeout(registerWithMessageRouter, 100);
+        }
+    }
+
+    // Handle messages from popup/other components
+    function handleMessage(message) {
+        const { MESSAGE_TYPES, SETTINGS_KEYS } = window.BetterLooksmaxMessages;
+        
+        if (message.type === MESSAGE_TYPES.SETTING_CHANGED) {
+            const { setting, enabled } = message;
+            
+            if (setting === SETTINGS_KEYS.TIMER_ENABLED) {
+                console.log(`[Timer] Received setting change: ${setting} = ${enabled}`);
+                
+                // Update timer state
+                updateTimerState(enabled);
+            }
+        }
+    }
+
+    // Update timer state
+    function updateTimerState(enabled) {
+        console.log(`[Timer] Timer state updated: ${enabled}`);
+        // This will be implemented based on the existing timer logic
+    }
+    
+    // Performance utilities (scoped to avoid conflicts)
+    var timerPerformanceUtils = null;
+    var timerEventManager = null;
+    
+    // Initialize performance utilities
+    function initPerformanceUtils() {
+        if (window.BetterLooksmaxPerformance && !timerPerformanceUtils) {
+            timerPerformanceUtils = window.BetterLooksmaxPerformance;
+            timerEventManager = new timerPerformanceUtils.EventManager();
+            console.log('[Timer] Performance utilities initialized');
+        }
+    }
+    
+    // Try to initialize immediately or wait for performance utils
+    if (window.BetterLooksmaxPerformance) {
+        initPerformanceUtils();
+    } else {
+        const checkForUtils = () => {
+            if (window.BetterLooksmaxPerformance) {
+                initPerformanceUtils();
+            } else {
+                setTimeout(checkForUtils, 100);
+            }
+        };
+        checkForUtils();
+    }
+    
     // Default settings
     const DEFAULT_SETTINGS = {
         dailyLimit: 3600, // 1 hour in seconds
@@ -8,12 +90,19 @@
         enabled: true
     };
     
+    // Interval and timeout tracking for proper cleanup
+    const activeIntervals = new Set();
+    const activeTimeouts = new Set();
+    
     // Get or create settings
     async function getSettings() {
         return new Promise((resolve) => {
-            chrome.storage.local.get(['forumTimerSettings'], (result) => {
-                const settings = result.forumTimerSettings 
-                    ? { ...DEFAULT_SETTINGS, ...result.forumTimerSettings }
+            timerAPI.storage.local.get(['forumTimerSettings'], (result) => {
+                // Validate storage data before using
+                const validated = window.StorageValidator ? 
+                    window.StorageValidator.validateStorageData(result) : result;
+                const settings = validated.forumTimerSettings 
+                    ? { ...DEFAULT_SETTINGS, ...validated.forumTimerSettings }
                     : DEFAULT_SETTINGS;
                 resolve(settings);
             });
@@ -21,7 +110,7 @@
     }
     
     function saveSettings(settings) {
-        chrome.storage.local.set({ forumTimerSettings: settings });
+        timerAPI.storage.local.set({ forumTimerSettings: settings });
     }
     
     // Get today's date string for daily tracking
@@ -33,8 +122,11 @@
     async function getDailyData() {
         const today = getTodayKey();
         return new Promise((resolve) => {
-            chrome.storage.local.get(['forumDailyData'], (result) => {
-                const data = result.forumDailyData || {};
+            timerAPI.storage.local.get(['forumDailyData'], (result) => {
+                // Validate storage data before using
+                const validated = window.StorageValidator ? 
+                    window.StorageValidator.validateStorageData(result) : result;
+                const data = validated.forumDailyData || {};
         
         // Clean old data (keep only last 2 days)
         const yesterday = new Date();
@@ -61,8 +153,13 @@
         });
     }
     
+    // Debounce storage saves to avoid excessive writes
+    let saveTimeout = null;
     function saveDailyData(data) {
-        chrome.storage.local.set({ forumDailyData: data });
+        clearTimeout(saveTimeout);
+        saveTimeout = setTimeout(() => {
+            timerAPI.storage.local.set({ forumDailyData: data });
+        }, 500); // Debounce by 500ms
     }
     
     function format(sec) {
@@ -138,9 +235,11 @@
         
         document.body.appendChild(overlay);
         
-        // Update countdown every second
+        // Update countdown every second with cached element
         const countdownEl = document.getElementById('lockout-countdown');
-        const countdownInterval = setInterval(async () => {
+        let countdownInterval;
+        
+        const updateCountdown = async () => {
             const remaining = await getLockoutTimeRemaining();
             if (remaining <= 0) {
                 clearInterval(countdownInterval);
@@ -148,8 +247,13 @@
                 location.reload();
             } else {
                 countdownEl.textContent = formatTimeRemaining(remaining);
+                // Use requestAnimationFrame for better performance
+                setTimeout(() => requestAnimationFrame(updateCountdown), 1000);
             }
-        }, 1000);
+        };
+        
+        // Start the countdown
+        updateCountdown();
         
         // Disable limiter button
         document.getElementById('disable-limiter-btn').addEventListener('click', () => {
@@ -259,14 +363,11 @@
            const contentDiv = document.createElement('div');
            contentDiv.style.padding = '20px';
            
-           // Daily limit section
-           const dailySection = createInputSection(
-               'Daily Time Limit (hours):',
-               'daily-limit-input',
-               'number',
-               settings.dailyLimit / 3600,
-               {min: '0.1', max: '12', step: '0.1'},
-               'Range: 0.1 - 12 hours'
+           // Daily limit section - hours and minutes
+           const dailySection = createTimeInputSection(
+               'Daily Time Limit:',
+               Math.floor(settings.dailyLimit / 3600),
+               Math.floor((settings.dailyLimit % 3600) / 60)
            );
            
            // Warning time section
@@ -282,6 +383,9 @@
            // Enable toggle
            const toggleSection = createToggleSection('Enable Time Limiter', 'enabled-checkbox', settings.enabled);
            
+           // Privacy settings section
+           const privacySection = createPrivacySection();
+           
            // Stats section
            const statsSection = createStatsSection(settings);
            
@@ -292,6 +396,7 @@
            contentDiv.appendChild(dailySection);
            contentDiv.appendChild(warningSection);
            contentDiv.appendChild(toggleSection);
+           contentDiv.appendChild(privacySection);
            contentDiv.appendChild(statsSection);
            contentDiv.appendChild(buttonsSection);
            
@@ -350,6 +455,98 @@
                div.appendChild(labelEl);
                div.appendChild(input);
                div.appendChild(hintDiv);
+               
+               return div;
+           }
+           
+           function createTimeInputSection(label, hours, minutes) {
+               const div = document.createElement('div');
+               div.style.marginBottom = '20px';
+               
+               const labelEl = document.createElement('label');
+               labelEl.style.cssText = 'display: block; margin-bottom: 6px; font-weight: 500; font-size: 13px; color: #ffffffff;';
+               labelEl.textContent = label;
+               
+               const inputContainer = document.createElement('div');
+               inputContainer.style.cssText = 'display: flex; align-items: center; gap: 8px;';
+               
+               // Hours input
+               const hoursInput = document.createElement('input');
+               hoursInput.type = 'number';
+               hoursInput.id = 'daily-limit-hours-input';
+               hoursInput.value = hours;
+               hoursInput.min = '0';
+               hoursInput.max = '24';
+               hoursInput.step = '1';
+               hoursInput.style.cssText = 'width: 80px; padding: 8px 10px; border: 1px solid #8d8d8dff; border-radius: 4px; background: #5f5f5fff; color: #ffffffff; font-size: 14px; box-sizing: border-box; transition: border-color 0.2s ease;';
+               
+               const hoursLabel = document.createElement('span');
+               hoursLabel.style.cssText = 'color: #ffffffff; font-size: 13px; margin-right: 8px;';
+               hoursLabel.textContent = 'hours';
+               
+               // Minutes input
+               const minutesInput = document.createElement('input');
+               minutesInput.type = 'number';
+               minutesInput.id = 'daily-limit-minutes-input';
+               minutesInput.value = minutes;
+               minutesInput.min = '0';
+               minutesInput.max = '59';
+               minutesInput.step = '1';
+               minutesInput.style.cssText = 'width: 80px; padding: 8px 10px; border: 1px solid #8d8d8dff; border-radius: 4px; background: #5f5f5fff; color: #ffffffff; font-size: 14px; box-sizing: border-box; transition: border-color 0.2s ease;';
+               
+               const minutesLabel = document.createElement('span');
+               minutesLabel.style.cssText = 'color: #ffffffff; font-size: 13px;';
+               minutesLabel.textContent = 'minutes';
+               
+               inputContainer.appendChild(hoursInput);
+               inputContainer.appendChild(hoursLabel);
+               inputContainer.appendChild(minutesInput);
+               inputContainer.appendChild(minutesLabel);
+               
+               const hintDiv = document.createElement('div');
+               hintDiv.style.cssText = 'margin-top: 4px; font-size: 11px; color: #ffffffff;';
+               hintDiv.textContent = 'Range: 0-24 hours, 0-59 minutes (max 23h 59m)';
+               
+               div.appendChild(labelEl);
+               div.appendChild(inputContainer);
+               div.appendChild(hintDiv);
+               
+               return div;
+           }
+           
+           function createPrivacySection() {
+               const div = document.createElement('div');
+               div.style.cssText = 'margin-bottom: 20px; padding: 12px; background: #5f5f5fff; border: 1px solid #8d8d8dff; border-radius: 4px;';
+               
+               const titleDiv = document.createElement('div');
+               titleDiv.style.cssText = 'font-size: 13px; font-weight: 600; color: #ffffffff; margin-bottom: 12px;';
+               titleDiv.textContent = 'Privacy Upload Settings';
+               
+               // Default privacy settings (will be updated async)
+               let filenameScrambling = true;
+               let metadataRemoval = true;
+               
+               // Filename scrambling toggle
+               const filenameDiv = createToggleSection('Filename Scrambling', 'filename-scrambling-checkbox', filenameScrambling);
+               filenameDiv.style.marginBottom = '8px';
+               
+               const filenameDesc = document.createElement('div');
+               filenameDesc.style.cssText = 'font-size: 11px; color: #ffffffff; margin-top: -15px; margin-bottom: 12px; margin-left: 20px;';
+               filenameDesc.textContent = 'Randomizes filenames when uploading';
+               
+               // Metadata removal toggle
+               const metadataDiv = createToggleSection('Metadata Removal', 'metadata-removal-checkbox', metadataRemoval);
+               metadataDiv.style.marginBottom = '8px';
+               
+               const metadataDesc = document.createElement('div');
+               metadataDesc.style.cssText = 'font-size: 11px; color: #ffffffff; margin-top: -15px; margin-bottom: 8px; margin-left: 20px;';
+               metadataDesc.textContent = 'Strips EXIF data from images';
+               
+               div.appendChild(titleDiv);
+               div.appendChild(filenameDiv);
+               div.appendChild(filenameDesc);
+               div.appendChild(metadataDiv);
+               div.appendChild(metadataDesc);
                
                return div;
            }
@@ -481,26 +678,45 @@
         });
         
         document.getElementById('save-settings').addEventListener('click', () => {
-            // SECURITY FIX: Add input validation to prevent invalid values
-            const dailyLimitInput = parseFloat(document.getElementById('daily-limit-input').value);
-            const warningTimeInput = parseInt(document.getElementById('warning-time-input').value);
+            const hours = parseInt(document.getElementById('daily-limit-hours-input').value) || 0;
+            const minutes = parseInt(document.getElementById('daily-limit-minutes-input').value) || 0;
             
-            // Validate inputs
-            if (isNaN(dailyLimitInput) || dailyLimitInput < 0.1 || dailyLimitInput > 24) {
-                alert('Daily limit must be between 0.1 and 24 hours');
+            // Validation
+            if (hours < 0 || hours > 24) {
+                showNotification('Hours must be between 0 and 24', 'warning');
+                return;
+            }
+            if (minutes < 0 || minutes > 59) {
+                showNotification('Minutes must be between 0 and 59', 'warning');
                 return;
             }
             
-            if (isNaN(warningTimeInput) || warningTimeInput < 1 || warningTimeInput > 1440) {
-                alert('Warning time must be between 1 and 1440 minutes');
+            const totalMinutes = (hours * 60) + minutes;
+            if (totalMinutes >= 1440) {
+                showNotification('Total time must be less than 24 hours', 'warning');
+                return;
+            }
+            if (totalMinutes < 1) {
+                showNotification('Minimum time limit is 1 minute', 'warning');
+
                 return;
             }
             
             const newSettings = {
-                dailyLimit: Math.round(dailyLimitInput * 3600),
-                warningTime: warningTimeInput * 60,
+                dailyLimit: (hours * 3600) + (minutes * 60),
+                warningTime: parseInt(document.getElementById('warning-time-input').value) * 60,
+
                 enabled: document.getElementById('enabled-checkbox').checked
             };
+            
+            // Save privacy settings
+            const filenameScrambling = document.getElementById('filename-scrambling-checkbox').checked;
+            const metadataRemoval = document.getElementById('metadata-removal-checkbox').checked;
+            
+            timerAPI.storage.local.set({ 
+                filenameScrambling: filenameScrambling,
+                metadataRemoval: metadataRemoval 
+            });
             
             saveSettings(newSettings);
             showNotification('Settings saved!', 'info');
@@ -530,6 +746,19 @@
             backdrop.remove();
             panel.remove();
         });
+        
+        // Load and apply privacy settings
+        timerAPI.storage.local.get(['filenameScrambling', 'metadataRemoval'], (result) => {
+            const filenameCheckbox = document.getElementById('filename-scrambling-checkbox');
+            const metadataCheckbox = document.getElementById('metadata-removal-checkbox');
+            
+            if (filenameCheckbox) {
+                filenameCheckbox.checked = result.filenameScrambling !== false;
+            }
+            if (metadataCheckbox) {
+                metadataCheckbox.checked = result.metadataRemoval !== false;
+            }
+        });
     }
     
     // Main initialization
@@ -545,26 +774,115 @@
             }
         }
         
-        // Find the Upgrade nav element and replace it
-        const upgradeNav = document.querySelector('.p-navEl-link[href="/account/upgrades"]');
-        if (upgradeNav) {
-            const navContainer = upgradeNav.closest('.p-navEl');
-            if (navContainer) {
-                const timediv = document.createElement('div');
-                timediv.id = 'time-spent';
-                timediv.style.cssText = `
-                    font-size: 12px;
-                    font-weight: bold;
-                    margin-top: 0;
-                    text-align: center;
-                    padding: 6px 4px;
-                    transition: color 0.3s ease;
-                    cursor: pointer;
-                    border-radius: 4px;
+        // Check if timer widget already exists
+        let timediv = document.getElementById('time-spent');
+        
+        if (!timediv) {
+            // Timer doesn't exist, need to create it
+            timediv = document.createElement('div');
+            timediv.id = 'time-spent';
+            timediv.style.cssText = `
+                font-size: 12px;
+                font-weight: bold;
+                margin-top: 0;
+                text-align: center;
+                padding: 6px 4px;
+                transition: color 0.3s ease;
+                cursor: pointer;
+                border-radius: 4px;
+            `;
+            
+            // Add progress bar
+            const progressBar = document.createElement('div');
+            progressBar.style.cssText = `
+                width: 100%;
+                height: 3px;
+                background: #333;
+                margin-top: 4px;
+                border-radius: 2px;
+                overflow: hidden;
+            `;
+            
+            const progressFill = document.createElement('div');
+            progressFill.style.cssText = `
+                height: 100%;
+                width: 0%;
+                background: #00aa00;
+                transition: width 0.3s ease, background-color 0.3s ease;
+            `;
+            
+            progressBar.appendChild(progressFill);
+            timediv.appendChild(progressBar);
+            
+            // Try multiple insertion strategies
+            let inserted = false;
+            
+            // Strategy 1: Try to replace the Upgrade nav element
+            const upgradeNav = document.querySelector('.p-navEl-link[href="/account/upgrades"]');
+            if (upgradeNav) {
+                const navContainer = upgradeNav.closest('.p-navEl');
+                if (navContainer) {
+                    navContainer.replaceWith(timediv);
+                    inserted = true;
+                }
+            }
+            
+            // Strategy 2: Insert after the first nav element if upgrade not found
+            if (!inserted) {
+                const firstNavEl = document.querySelector('.p-nav-list .p-navEl');
+                if (firstNavEl) {
+                    // Create a wrapper div to match nav element structure
+                    const wrapperDiv = document.createElement('div');
+                    wrapperDiv.className = 'p-navEl';
+                    wrapperDiv.appendChild(timediv);
+                    firstNavEl.parentNode.insertBefore(wrapperDiv, firstNavEl.nextSibling);
+                    inserted = true;
+                }
+            }
+            
+            // Strategy 3: Insert at the beginning of nav list
+            if (!inserted) {
+                const navList = document.querySelector('.p-nav-list');
+                if (navList) {
+                    const wrapperDiv = document.createElement('div');
+                    wrapperDiv.className = 'p-navEl';
+                    wrapperDiv.appendChild(timediv);
+                    navList.insertBefore(wrapperDiv, navList.firstChild);
+                    inserted = true;
+                }
+            }
+            
+            // Strategy 4: Create a fixed position timer as last resort
+            if (!inserted && document.body) {
+                timediv.style.cssText += `
+                    position: fixed;
+                    top: 10px;
+                    right: 200px;
+                    z-index: 9999;
+                    background: rgba(0, 0, 0, 0.8);
+                    padding: 8px 12px;
+                    border-radius: 6px;
+                    color: white;
                 `;
+                document.body.appendChild(timediv);
+                inserted = true;
+            }
+        }
+        
+        // Only proceed if we have a timer div (either existing or newly created)
+        if (timediv) {
+            // Get or recreate progress bar reference
+            let progressBar = timediv.querySelector('div');
+            let progressFill = progressBar ? progressBar.querySelector('div') : null;
+            
+            // If progress bar doesn't exist (e.g., existing timer from previous load), create it
+            if (!progressBar || !progressFill) {
+                // Clear existing content safely without innerHTML
+                while (timediv.firstChild) {
+                    timediv.removeChild(timediv.firstChild);
+                }
                 
-                // Add progress bar
-                const progressBar = document.createElement('div');
+                progressBar = document.createElement('div');
                 progressBar.style.cssText = `
                     width: 100%;
                     height: 3px;
@@ -574,7 +892,7 @@
                     overflow: hidden;
                 `;
                 
-                const progressFill = document.createElement('div');
+                progressFill = document.createElement('div');
                 progressFill.style.cssText = `
                     height: 100%;
                     width: 0%;
@@ -584,16 +902,16 @@
                 
                 progressBar.appendChild(progressFill);
                 timediv.appendChild(progressBar);
-                navContainer.replaceWith(timediv);
-                
-                // Click to open settings
-                timediv.addEventListener('click', createSettingsPanel);
-                timediv.title = 'Click to open time limiter settings';
-                
-                let updateInterval;
+            }
+            
+            // Click to open settings
+            timediv.addEventListener('click', createSettingsPanel);
+            timediv.title = 'Click to open time limiter settings';
+            
+            let updateInterval;
                 
                 async function updateDisplay() {
-                    const { data, today } = await getDailyData();
+                    const { data, today } = await getCachedData();
                     const todayData = data[today];
                     
                     if (settings.enabled) {
@@ -626,7 +944,10 @@
                             todayData.lockTime = new Date().toISOString();
                             saveDailyData(data);
                             
-                            clearInterval(updateInterval);
+                            if (updateInterval) {
+                                clearInterval(updateInterval);
+                                activeIntervals.delete(updateInterval);
+                            }
                             showNotification('⛔ Daily limit reached! Site will be locked in 5 seconds...', 'critical');
                             
                             setTimeout(() => {
@@ -644,15 +965,32 @@
                     }
                 }
                 
+                // Cache data to avoid repeated storage reads
+                let cachedData = null;
+                let cacheTime = 0;
+                
+                async function getCachedData() {
+                    const now = Date.now();
+                    if (!cachedData || (now - cacheTime) > 5000) { // Cache for 5 seconds
+                        cachedData = await getDailyData();
+                        cacheTime = now;
+                    }
+                    return cachedData;
+                }
+                
                 async function tick() {
-                    const { data, today } = await getDailyData();
+                    const { data, today } = await getCachedData();
                     const todayData = data[today];
                     
                     // Always track time, but only enforce limits if enabled
                     if (!settings.enabled || !todayData.isLocked) {
                         todayData.timeSpent++;
                         saveDailyData(data);
-                        updateDisplay();
+                        
+                        // Update display less frequently for better performance
+                        if (todayData.timeSpent % 5 === 0) { // Update every 5 seconds
+                            updateDisplay();
+                        }
                     }
                 }
                 
@@ -670,13 +1008,62 @@
                 timediv.insertBefore(textDiv, progressBar);
                 
                 updateDisplay();
+                
+                // Use less frequent updates with proper cleanup tracking
                 updateInterval = setInterval(tick, 1000);
-            }
+                activeIntervals.add(updateInterval);
+                
+                // Add cleanup handlers with proper event management
+                const beforeUnloadHandler = () => {
+                    cleanup();
+                };
+                
+                if (timerEventManager) {
+                    timerEventManager.addListener(window, 'beforeunload', beforeUnloadHandler);
+                } else {
+                    window.addEventListener('beforeunload', beforeUnloadHandler);
+                }
         }
     }
     
-    // Start the timer
-    init();
+    // Cleanup function for memory leak prevention
+    function cleanup() {
+        console.log('[Timer] Starting cleanup...');
+        
+        // Clear all active intervals
+        activeIntervals.forEach(intervalId => {
+            clearInterval(intervalId);
+        });
+        activeIntervals.clear();
+        
+        // Clear all active timeouts
+        activeTimeouts.forEach(timeoutId => {
+            clearTimeout(timeoutId);
+        });
+        activeTimeouts.clear();
+        
+        // Clean up event manager
+        if (timerEventManager) {
+            timerEventManager.cleanup();
+        }
+        
+        console.log('[Timer] Cleanup completed');
+    }
+    
+    // Add cleanup on page unload (fallback)
+    window.addEventListener('beforeunload', cleanup);
+    
+    // Start the timer when DOM is ready
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', () => {
+            init();
+            registerWithMessageRouter();
+        });
+    } else {
+        // DOM is already loaded
+        init();
+        registerWithMessageRouter();
+    }
     
     // Expose functions for testing
     if (typeof global !== 'undefined') {

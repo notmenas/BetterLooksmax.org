@@ -3,8 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; font-src 'self' data:; img-src 'self' data:;">
     <title>Looksmax.org Tools</title>
-    <style>
+    <link rel="stylesheet" href="popup.css">
         :root {
             --bg-color: #121218;
             --card-bg: #1e1e2e;
@@ -65,7 +66,7 @@
         .logo-placeholder {
             width: 40px;
             height: 40px;
-            background-image: url("logo.png");
+            background-image: url("/popup/logo.png");
             background-size: contain;
             background-position: center;
             background-repeat: no-repeat;
@@ -606,21 +607,272 @@
             justify-content: space-between;
             color: var(--text-color);
         }
-    </style>
+
+        /* Enhanced popup layout styles */
+        .feature-section {
+            margin-bottom: 24px;
+        }
+
+        .feature-section:last-child {
+            margin-bottom: 0;
+        }
+
+        .section-title {
+            font-size: 1rem;
+            font-weight: 600;
+            margin-bottom: 12px;
+            color: var(--accent-color);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .section-title i {
+            font-size: 0.9rem;
+            opacity: 0.8;
+        }
+
+        .setting-info {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+
+        .setting-name {
+            font-weight: 500;
+            color: var(--text-color);
+            font-size: 0.95rem;
+        }
+
+        .setting-desc {
+            font-size: 0.8rem;
+            color: var(--secondary-text);
+            line-height: 1.3;
+        }
+
+        .privacy-note {
+            background-color: rgba(99, 102, 241, 0.1);
+            border: 1px solid rgba(99, 102, 241, 0.2);
+            border-radius: 6px;
+            padding: 12px;
+            margin-bottom: 16px;
+            display: flex;
+            align-items: flex-start;
+            gap: 8px;
+            font-size: 0.85rem;
+            color: var(--text-color);
+        }
+
+        .privacy-note i {
+            color: var(--accent-color);
+            margin-top: 1px;
+            flex-shrink: 0;
+        }
+
+        /* Updated setting-item to work with new structure */
+        .setting-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 14px 16px;
+            background-color: var(--input-bg);
+            border-radius: 8px;
+            border: 1px solid var(--border-color);
+            margin-bottom: 8px;
+            transition: background-color 0.2s ease;
+        }
+
+        .setting-item:hover {
+            background-color: rgba(255, 255, 255, 0.02);
+        }
+
+        .setting-item:last-child {
+            margin-bottom: 0;
+        }
+
+        /* Enhanced main headers */
+        .controls-container h2 {
+            font-size: 1.3rem;
+            font-weight: 600;
+            margin-bottom: 20px;
+            color: white;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding-bottom: 12px;
+            border-bottom: 2px solid var(--accent-color);
 </head>
 <body>
-    <div class="container" style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:350px;">
-        <div class="header" style="margin-bottom:24px;">
-            <div class="logo-wrapper" style="display:flex;align-items:center;gap:12px;">
-                <div class="logo-placeholder" style="width: 100px;"></div>
+    <div class="container">
+        <div class="header">
+            <div class="logo-wrapper">
+                <div class="logo-placeholder"></div>
+                <div class="app-title">BetterLooksmax.org</div>
             </div>
         </div>
-        <div style="margin-top:32px;font-size:1.3rem;color:var(--accent-color);text-align:center;font-weight:600;">
-            BetterLooksmax.org
+        
+        <div class="nav-tabs">
+            <button class="nav-tab active" data-tab="features">Features</button>
+            <button class="nav-tab" data-tab="privacy">Privacy</button>
+            <button class="nav-tab" data-tab="settings">Settings</button>
         </div>
-               <div style="margin-top:32px;font-size:1.1rem;color:var(--secondary-text);text-align:center;">
-            - in memory of the great DxD crew
+
+        <div id="features" class="tab-content active">
+            <div class="controls-container">
+                <h2>🔧 Forum Features</h2>
+                
+                <!-- Content Filtering Section -->
+                <div class="feature-section">
+                    <h3 class="section-title">
+                        <i class="fas fa-filter"></i>
+                        Content Filtering
+                    </h3>
+                    <div class="settings-options">
+                        <div class="setting-item">
+                            <div class="setting-info">
+                                <span class="setting-name">Grey User Filter</span>
+                                <span class="setting-desc">Hide posts from new users without status</span>
+                            </div>
+                            <label class="switch">
+                                <input type="checkbox" id="greyFilter">
+                                <span class="switch-slider"></span>
+                            </label>
+                        </div>
+                        <div class="setting-item">
+                            <div class="setting-info">
+                                <span class="setting-name">NSFW Content Filter</span>
+                                <span class="setting-desc">Hide posts tagged as NSFW content</span>
+                            </div>
+                            <label class="switch">
+                                <input type="checkbox" id="nsfwFilter">
+                                <span class="switch-slider"></span>
+                            </label>
+                        </div>
+                        <div class="setting-item">
+                            <div class="setting-info">
+                                <span class="setting-name">OP-Only Mode</span>
+                                <span class="setting-desc">Show only original poster's replies</span>
+                            </div>
+                            <label class="switch">
+                                <input type="checkbox" id="opFilter">
+                                <span class="switch-slider"></span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Privacy & Usage Section -->
+                <div class="feature-section">
+                    <h3 class="section-title">
+                        <i class="fas fa-shield-alt"></i>
+                        Privacy & Usage
+                    </h3>
+                    <div class="settings-options">
+                        <div class="setting-item">
+                            <div class="setting-info">
+                                <span class="setting-name">Public Mode</span>
+                                <span class="setting-desc">Hide identifying content and blur images</span>
+                            </div>
+                            <label class="switch">
+                                <input type="checkbox" id="publicMode">
+                                <span class="switch-slider"></span>
+                            </label>
+                        </div>
+                        <div class="setting-item">
+                            <div class="setting-info">
+                                <span class="setting-name">Timer/Usage Limiter</span>
+                                <span class="setting-desc">Track and limit daily forum usage time</span>
+                            </div>
+                            <label class="switch">
+                                <input type="checkbox" id="timerEnabled">
+                                <span class="switch-slider"></span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="privacy" class="tab-content">
+            <div class="controls-container">
+                <h2>🔒 Upload Privacy</h2>
+                
+                <!-- File Privacy Section -->
+                <div class="feature-section">
+                    <h3 class="section-title">
+                        <i class="fas fa-file-shield"></i>
+                        File Protection
+                    </h3>
+                    <div class="privacy-note">
+                        <i class="fas fa-info-circle"></i>
+                        These settings protect your privacy when uploading files to the forum.
+                    </div>
+                    <div class="settings-options">
+                        <div class="setting-item">
+                            <div class="setting-info">
+                                <span class="setting-name">Filename Scrambling</span>
+                                <span class="setting-desc">Randomizes filenames when uploading files</span>
+                            </div>
+                            <label class="switch">
+                                <input type="checkbox" id="filenameScrambling" checked>
+                                <span class="switch-slider"></span>
+                            </label>
+                        </div>
+                        <div class="setting-item">
+                            <div class="setting-info">
+                                <span class="setting-name">Metadata Removal</span>
+                                <span class="setting-desc">Strips EXIF data and metadata from images</span>
+                            </div>
+                            <label class="switch">
+                                <input type="checkbox" id="metadataRemoval" checked>
+                                <span class="switch-slider"></span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="settings" class="tab-content">
+            <div class="controls-container">
+                <h2>⚙️ General Settings</h2>
+                
+                <!-- Extension Settings Section -->
+                <div class="feature-section">
+                    <h3 class="section-title">
+                        <i class="fas fa-cog"></i>
+                        Extension Preferences
+                    </h3>
+                    <div class="settings-options">
+                        <div class="setting-item">
+                            <div class="setting-info">
+                                <span class="setting-name">Dark Mode</span>
+                                <span class="setting-desc">Apply dark theme to forum pages</span>
+                            </div>
+                            <label class="switch">
+                                <input type="checkbox" id="darkMode">
+                                <span class="switch-slider"></span>
+                            </label>
+                        </div>
+                        <div class="setting-item">
+                            <div class="setting-info">
+                                <span class="setting-name">Auto Save</span>
+                                <span class="setting-desc">Automatically save settings changes</span>
+                            </div>
+                            <label class="switch">
+                                <input type="checkbox" id="autoSave">
+                                <span class="switch-slider"></span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
+
+    <script src="popup.js"></script>
 </body>
 </html>

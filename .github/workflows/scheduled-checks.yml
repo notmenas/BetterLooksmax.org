@@ -1,0 +1,143 @@
+name: Scheduled Health Checks
+
+on:
+  schedule:
+    # Run every Monday at 9 AM UTC
+    - cron: '0 9 * * 1'
+  workflow_dispatch: # Allow manual triggering
+
+jobs:
+  health-check:
+    runs-on: ubuntu-latest
+    name: Extension Health Check
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+        
+    - name: Install dependencies
+      run: npm ci
+      
+    - name: Check for outdated dependencies
+      run: |
+        echo "🔍 Checking for outdated dependencies..."
+        npm outdated || true
+        
+    - name: Security audit
+      run: |
+        echo "🔒 Running security audit..."
+        npm audit --audit-level=moderate
+        
+    - name: Check extension file integrity
+      run: |
+        echo "🔍 Checking extension files..."
+        
+        # Check that all required files exist
+        required_files=(
+          "browser-api.js"
+          "content.js" 
+          "background.js"
+          "sanitizer.js"
+          "manifest.json"
+          "manifest-firefox.json"
+        )
+        
+        for file in "${required_files[@]}"; do
+          if [ -f "$file" ]; then
+            echo "✅ $file exists"
+          else
+            echo "❌ $file missing"
+            exit 1
+          fi
+        done
+        
+    - name: Validate extension structure
+      run: |
+        echo "🏗️ Validating extension structure..."
+        
+        # Check popup directory
+        if [ -d "popup" ] && [ -f "popup/popup.html" ]; then
+          echo "✅ Popup structure valid"
+        else
+          echo "❌ Popup structure invalid"
+          exit 1
+        fi
+        
+        # Check libs directory
+        if [ -d "libs" ] && [ -f "libs/purify.min.js" ]; then
+          echo "✅ Libs structure valid"
+        else
+          echo "❌ Libs structure invalid" 
+          exit 1
+        fi
+        
+    - name: Test compatibility layer
+      run: |
+        echo "🧪 Testing browser compatibility layer..."
+        
+        # Basic syntax check on browser-api.js
+        node -c browser-api.js && echo "✅ browser-api.js syntax OK"
+        
+        # Check that it exports the right objects
+        node -e "
+          eval(require('fs').readFileSync('browser-api.js', 'utf8'));
+          if (typeof BrowserAPI === 'undefined') {
+            console.log('❌ BrowserAPI not exported');
+            process.exit(1);
+          }
+          console.log('✅ BrowserAPI exported correctly');
+        "
+        
+    - name: Check manifest versions match
+      run: |
+        echo "🔍 Checking manifest versions..."
+        
+        CHROME_VERSION=$(python3 -c "import json; print(json.load(open('manifest.json'))['version'])")
+        FIREFOX_VERSION=$(python3 -c "import json; print(json.load(open('manifest-firefox.json'))['version'])")
+        
+        if [ "$CHROME_VERSION" = "$FIREFOX_VERSION" ]; then
+          echo "✅ Versions match: $CHROME_VERSION"
+        else
+          echo "❌ Version mismatch: Chrome=$CHROME_VERSION, Firefox=$FIREFOX_VERSION"
+          exit 1
+        fi
+        
+    - name: Create issue on failure
+      if: failure()
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const title = `🚨 Scheduled Health Check Failed - ${new Date().toISOString().split('T')[0]}`;
+          const body = `
+          ## Health Check Failure
+          
+          The scheduled health check has detected issues with the extension.
+          
+          **Workflow Run:** ${context.payload.repository.html_url}/actions/runs/${context.runId}
+          **Date:** ${new Date().toISOString()}
+          
+          Please review the workflow logs and address any issues found.
+          
+          ### Possible Issues:
+          - Outdated dependencies
+          - Security vulnerabilities  
+          - Missing or corrupted files
+          - Manifest version mismatches
+          - Browser API compatibility problems
+          
+          This issue was automatically created by the scheduled health check workflow.
+          `;
+          
+          github.rest.issues.create({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            title: title,
+            body: body,
+            labels: ['bug', 'automated', 'health-check']
+          });

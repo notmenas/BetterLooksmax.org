@@ -1,0 +1,317 @@
+name: Build and Release Extension
+
+on:
+  push:
+    branches: [ main, develop ]
+    tags: [ 'v*.*.*' ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+    inputs:
+      create_release:
+        description: 'Create a new release'
+        required: false
+        default: false
+        type: boolean
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    name: Test Extension
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+        
+    - name: Install dependencies
+      run: npm ci
+      
+    - name: Run syntax checks
+      run: |
+        echo "Checking JavaScript syntax..."
+        for file in *.js; do
+          if [ -f "$file" ]; then
+            node -c "$file" && echo "✓ $file syntax OK" || exit 1
+          fi
+        done
+        
+    - name: Run tests
+      run: npm test
+      continue-on-error: true
+      
+    - name: Upload test results
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: test-results
+        path: |
+          test-results/
+          coverage/
+        retention-days: 7
+
+  build:
+    runs-on: ubuntu-latest
+    needs: test
+    name: Build Extensions
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Create build directories
+      run: |
+        mkdir -p dist/chrome
+        mkdir -p dist/firefox
+        
+    - name: Copy common files
+      run: |
+        # Function to copy files (only essential extension files)
+        copy_files() {
+          local dest="$1"
+          
+          # Copy essential JavaScript files (exclude test configs and dev files)
+          essential_js_files=(
+            "background.js"
+            "browser-api.js" 
+            "content.js"
+            "sanitizer.js"
+            "greyfilter.js"
+            "nsfwfilter.js"
+            "opfilter.js"
+            "publicmode.js"
+            "quickreply.js"
+            "text-presets.js"
+            "timer.js"
+            "security-utils.js"
+            "storage-validator.js"
+            "performance-utils.js"
+            "message-constants.js"
+            "custom-upload.js"
+            "button-styles.js"
+            "privacy-dropdown.js"
+            "privacy-buttons.js"
+            "privacy-buttons-simple.js"
+            "debug-buttons.js"
+          )
+          
+          for file in "${essential_js_files[@]}"; do
+            if [ -f "$file" ]; then
+              cp "$file" "$dest/"
+              echo "✓ Copied $file"
+            else
+              echo "⚠ Warning: $file not found"
+            fi
+          done
+          
+          # Copy directories
+          cp -r popup "$dest/"
+          cp -r libs "$dest/"
+          
+          # Copy other assets if they exist
+          if [ -f "icon.png" ]; then
+            cp icon.png "$dest/"
+            echo "✓ Copied icon.png"
+          fi
+          
+          echo "Essential files copied to $dest"
+        }
+        
+        # Build Chrome version
+        echo "Building Chrome version..."
+        copy_files "dist/chrome"
+        cp manifest.json dist/chrome/
+        
+        # Build Firefox version
+        echo "Building Firefox version..."
+        copy_files "dist/firefox"  
+        cp manifest-firefox.json dist/firefox/manifest.json
+        
+    - name: Validate manifests
+      run: |
+        echo "Validating Chrome manifest..."
+        if ! python3 -m json.tool dist/chrome/manifest.json > /dev/null; then
+          echo "❌ Chrome manifest.json is invalid"
+          exit 1
+        fi
+        echo "✓ Chrome manifest is valid"
+        
+        echo "Validating Firefox manifest..."
+        if ! python3 -m json.tool dist/firefox/manifest.json > /dev/null; then
+          echo "❌ Firefox manifest.json is invalid"
+          exit 1
+        fi
+        echo "✓ Firefox manifest is valid"
+        
+    - name: Create Chrome ZIP
+      run: |
+        cd dist/chrome
+        zip -r ../BetterLooksmax-Chrome.zip * -x "*.git*" "node_modules/*" "*.log"
+        cd ../..
+        echo "✓ Chrome ZIP created"
+        
+    - name: Create Firefox XPI
+      run: |
+        cd dist/firefox
+        zip -r ../BetterLooksmax-Firefox.xpi * -x "*.git*" "node_modules/*" "*.log"
+        cd ../..
+        echo "✓ Firefox XPI created"
+        
+    - name: Verify packages
+      run: |
+        echo "Package sizes:"
+        ls -lh dist/*.zip dist/*.xpi
+        
+        echo "Chrome package contents:"
+        unzip -l dist/BetterLooksmax-Chrome.zip
+        
+        echo "Firefox package contents:"  
+        unzip -l dist/BetterLooksmax-Firefox.xpi
+        
+    - name: Upload Chrome build artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: chrome-extension
+        path: |
+          dist/BetterLooksmax-Chrome.zip
+          dist/chrome/
+        retention-days: 30
+        
+    - name: Upload Firefox build artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: firefox-extension
+        path: |
+          dist/BetterLooksmax-Firefox.xpi
+          dist/firefox/
+        retention-days: 30
+
+  security-scan:
+    runs-on: ubuntu-latest
+    needs: build
+    name: Security Scan
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Download build artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: chrome-extension
+        path: dist/
+        
+    - name: Run security checks
+      run: |
+        echo "Running basic security checks..."
+        
+        # Check for potential security issues in JavaScript files
+        echo "Checking for eval() usage..."
+        if grep -r "eval(" *.js; then
+          echo "⚠️  Warning: eval() usage found"
+        else
+          echo "✓ No eval() usage found"
+        fi
+        
+        # Check for innerHTML usage
+        echo "Checking for innerHTML usage..."  
+        if grep -r "innerHTML" *.js; then
+          echo "⚠️  Warning: innerHTML usage found - ensure proper sanitization"
+        else
+          echo "✓ No innerHTML usage found"
+        fi
+        
+        # Check manifest permissions
+        echo "Checking manifest permissions..."
+        echo "Chrome permissions:"
+        python3 -c "import json; print('\n'.join(json.load(open('manifest.json'))['permissions']))"
+        echo "Firefox permissions:"
+        python3 -c "import json; print('\n'.join(json.load(open('manifest-firefox.json'))['permissions']))"
+
+  release:
+    runs-on: ubuntu-latest
+    needs: [test, build, security-scan]
+    name: Create Release
+    if: startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && github.event.inputs.create_release == 'true')
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Download Chrome artifact
+      uses: actions/download-artifact@v4
+      with:
+        name: chrome-extension
+        path: dist/
+        
+    - name: Download Firefox artifact
+      uses: actions/download-artifact@v4
+      with:
+        name: firefox-extension
+        path: dist/
+        
+    - name: Get version from manifest
+      id: version
+      run: |
+        VERSION=$(python3 -c "import json; print(json.load(open('manifest.json'))['version'])")
+        echo "version=$VERSION" >> $GITHUB_OUTPUT
+        echo "Extension version: $VERSION"
+        
+    - name: Generate changelog
+      id: changelog
+      run: |
+        # Extract version from tag or use manifest version
+        if [[ $GITHUB_REF == refs/tags/* ]]; then
+          VERSION=${GITHUB_REF#refs/tags/v}
+        else
+          VERSION=${{ steps.version.outputs.version }}
+        fi
+        
+        echo "## BetterLooksmax.org Extension v$VERSION" > CHANGELOG.md
+        echo "" >> CHANGELOG.md
+        echo "### ✨ Features" >> CHANGELOG.md
+        echo "- Cross-browser compatibility (Chrome & Firefox)" >> CHANGELOG.md
+        echo "- Grey user filtering" >> CHANGELOG.md
+        echo "- NSFW content filtering" >> CHANGELOG.md
+        echo "- OP-only post filtering" >> CHANGELOG.md  
+        echo "- Public mode for discrete browsing" >> CHANGELOG.md
+        echo "- Quick reply templates" >> CHANGELOG.md
+        echo "- Advanced text formatting presets" >> CHANGELOG.md
+        echo "- Usage timer and limits" >> CHANGELOG.md
+        echo "" >> CHANGELOG.md
+        echo "### 📦 Installation" >> CHANGELOG.md
+        echo "- **Chrome**: Install from Chrome Web Store or load \`BetterLooksmax-Chrome.zip\`" >> CHANGELOG.md
+        echo "- **Firefox**: Drag and drop \`BetterLooksmax-Firefox.xpi\` into Firefox" >> CHANGELOG.md
+        echo "" >> CHANGELOG.md
+        echo "### 🛠️ Technical" >> CHANGELOG.md
+        echo "- Manifest V3 compatible" >> CHANGELOG.md
+        echo "- Cross-browser API wrapper" >> CHANGELOG.md
+        echo "- Security-focused sanitization" >> CHANGELOG.md
+        echo "- Automated CI/CD pipeline" >> CHANGELOG.md
+        
+        cat CHANGELOG.md
+        
+    - name: Create Release
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: ${{ github.ref_name || format('v{0}', steps.version.outputs.version) }}
+        name: BetterLooksmax.org v${{ steps.version.outputs.version }}
+        body_path: CHANGELOG.md
+        files: |
+          dist/BetterLooksmax-Chrome.zip
+          dist/BetterLooksmax-Firefox.xpi
+        draft: false
+        prerelease: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        
+    - name: Notify on success
+      run: |
+        echo "🎉 Release created successfully!"
+        echo "Chrome package: BetterLooksmax-Chrome.zip"
+        echo "Firefox package: BetterLooksmax-Firefox.xpi"
