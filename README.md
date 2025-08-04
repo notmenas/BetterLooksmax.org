@@ -3,7 +3,7 @@
 > **Open-source Browser Extension for Looksmax.org**
 
 
-**By:** [@menas](https://github.com/menas) @mvpisafaggot420
+**By:** [@menas](https://github.com/menas) [@mvpisafaggot420](mvpisafaggot420)
 
 **Credits to:** @chadisbeingmade, @Sadist, and @Zagro for letting me steal their xenforo cookies (testers). 😈
 
