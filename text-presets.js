@@ -1,5 +1,41 @@
 // Text Formatting Presets System
 (function() {
+    console.log('[TextPresets] Script loading started');
+    
+    // Use the cross-browser API wrapper
+    const textPresetsAPI = (typeof BrowserAPI !== 'undefined') ? BrowserAPI : 
+                           (typeof browser !== 'undefined') ? browser : chrome;
+    
+    console.log('[TextPresets] API wrapper loaded:', !!textPresetsAPI);
+    console.log('[TextPresets] Continuing with variable declarations...');
+    
+    // Performance utilities (scoped to avoid conflicts)
+    var textPerformanceUtils = null;
+    var textEventManager = null;
+    
+    // Initialize performance utilities
+    function initPerformanceUtils() {
+        if (window.BetterLooksmaxPerformance && !textPerformanceUtils) {
+            textPerformanceUtils = window.BetterLooksmaxPerformance;
+            textEventManager = new textPerformanceUtils.EventManager();
+            console.log('[TextPresets] Performance utilities initialized');
+        }
+    }
+    
+    // Try to initialize immediately or wait for performance utils
+    if (window.BetterLooksmaxPerformance) {
+        initPerformanceUtils();
+    } else {
+        const checkForUtils = () => {
+            if (window.BetterLooksmaxPerformance) {
+                initPerformanceUtils();
+            } else {
+                setTimeout(checkForUtils, 100);
+            }
+        };
+        checkForUtils();
+    }
+
     // Store jQuery reference
     let $jQuery;
 
@@ -212,9 +248,9 @@
         async get(key) {
             try {
                 return new Promise((resolve) => {
-                    chrome.storage.local.get([key], (result) => {
-                        if (chrome.runtime.lastError) {
-                            console.warn('Storage get error:', chrome.runtime.lastError);
+                    textPresetsAPI.storage.local.get([key], (result) => {
+                        if (textPresetsAPI.runtime.lastError) {
+                            console.warn('Storage get error:', textPresetsAPI.runtime.lastError);
                             resolve(null);
                         } else {
                             resolve(result[key] || null);
@@ -239,13 +275,13 @@
                 
                 // Save to chrome.storage
                 return new Promise((resolve, reject) => {
-                    chrome.storage.local.set({ [key]: value }, () => {
-                        if (chrome.runtime.lastError) {
-                            console.error('Chrome storage set failed:', chrome.runtime.lastError);
-                            if (chrome.runtime.lastError.message && chrome.runtime.lastError.message.includes('quota')) {
+                    textPresetsAPI.storage.local.set({ [key]: value }, () => {
+                        if (textPresetsAPI.runtime.lastError) {
+                            console.error('Chrome storage set failed:', textPresetsAPI.runtime.lastError);
+                            if (textPresetsAPI.runtime.lastError.message && textPresetsAPI.runtime.lastError.message.includes('quota')) {
                                 reject(new Error('Storage quota exceeded. Please delete some presets or clear browser data.'));
                             } else {
-                                reject(new Error('Failed to save to storage: ' + chrome.runtime.lastError.message));
+                                reject(new Error('Failed to save to storage: ' + textPresetsAPI.runtime.lastError.message));
                             }
                         } else {
                             resolve();
@@ -361,8 +397,8 @@ function createPresetButton() {
         buildPopupDOM(popup);
         
         function buildPopupDOM(popup) {
-            // For now, using innerHTML but will be replaced with safe DOM construction
-            // TODO: Replace with createElement calls
+            // Using safe DOM construction with createElement
+            // No innerHTML usage - all elements are created programmatically
             // Safe DOM construction helper
             const createElement = (tag, attrs = {}, children = []) => {
                 const el = document.createElement(tag);
@@ -580,6 +616,7 @@ function createPresetButton() {
             // Add everything to popup
             popup.appendChild(titleDiv);
             popup.appendChild(blockBody);
+        }
         
         // Add event listeners
         modalContainer.appendChild(overlay);
@@ -1817,17 +1854,42 @@ function createPresetButton() {
 
     // Initialize when the page is loaded
     let isPresetsInitialized = false;
+    let editorObserver;
+    let timeout;
 
     function initializePresets() {
         if (isPresetsInitialized) return;
+        
+        console.log('[TextPresets] Initializing presets...');
 
-        // Wait for the editor to be ready
-        const checkEditor = setInterval(() => {
+        // Use MutationObserver instead of polling
+
+        const tryInitialize = () => {
             const editor = document.querySelector('.fr-element');
             const italicButton = document.querySelector('#italic-1');
+            
+            // Debug: Look for other possible editor elements
+            const allTextareas = document.querySelectorAll('textarea');
+            const allEditors = document.querySelectorAll('[contenteditable="true"]');
+            const allButtons = document.querySelectorAll('button[title*="italic"], button[title*="Italic"]');
+            
+            console.log('[TextPresets] Looking for editor elements:', {
+                editor: !!editor,
+                italicButton: !!italicButton,
+                allTextareas: allTextareas.length,
+                allEditors: allEditors.length,
+                allButtons: allButtons.length,
+                textareaElements: Array.from(allTextareas).map(el => el.id || el.className || 'no-id'),
+                editorElements: Array.from(allEditors).map(el => el.id || el.className || 'no-id'),
+                buttonElements: Array.from(allButtons).map(el => el.id || el.title || el.className || 'no-id')
+            });
 
             if (editor && italicButton) {
-                clearInterval(checkEditor);
+                console.log('[TextPresets] Found required elements, initializing...');
+                if (editorObserver) {
+                    editorObserver.disconnect();
+                }
+                clearTimeout(timeout);
                 isPresetsInitialized = true;
                 
                 // Get jQuery reference from the editor
@@ -1863,22 +1925,72 @@ function createPresetButton() {
                 // Create the button
                 createPresetButton();
                 
-                // Add keyboard shortcut listener
-                document.addEventListener('keydown', handleKeyboardShortcut);
+                // Add keyboard shortcut listener with proper event management
+                if (textEventManager) {
+                    textEventManager.addListener(document, 'keydown', handleKeyboardShortcut);
+                } else {
+                    document.addEventListener('keydown', handleKeyboardShortcut);
+                }
+                return true;
             }
-        }, 100); // Check every 100ms
+            return false;
+        };
 
-        // Stop checking after 10 seconds
-        setTimeout(() => {
-            clearInterval(checkEditor);
+        // Try immediately
+        if (tryInitialize()) return;
+
+        // Use MutationObserver to watch for editor
+        editorObserver = new MutationObserver(() => {
+            tryInitialize();
+        });
+
+        editorObserver.observe(document.body, {
+            childList: true,
+            subtree: true,
+            attributes: true,
+            attributeFilter: ['id', 'class']
+        });
+
+        // Stop observing after 10 seconds
+        timeout = setTimeout(() => {
+            if (editorObserver) {
+                editorObserver.disconnect();
+            }
         }, 10000);
     }
 
     if (document.readyState === 'loading') {
+        console.log('[TextPresets] DOM loading, adding DOMContentLoaded listener');
         document.addEventListener('DOMContentLoaded', initializePresets);
     } else {
+        console.log('[TextPresets] DOM ready, initializing immediately');
         initializePresets();
     }
+    
+    // Cleanup function for memory leak prevention
+    function cleanup() {
+        if (textEventManager) {
+            textEventManager.cleanup();
+        }
+        
+        // Disconnect any active observers
+        if (editorObserver) {
+            editorObserver.disconnect();
+            editorObserver = null;
+        }
+        
+        // Clear any timeouts
+        if (timeout) {
+            clearTimeout(timeout);
+            timeout = null;
+        }
+        
+        console.log('[TextPresets] Cleanup completed');
+    }
+    
+    // Add cleanup on page unload
+    window.addEventListener('beforeunload', cleanup);
+    
+    console.log('[TextPresets] Script fully loaded');
 
-}
 })();

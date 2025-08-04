@@ -1,14 +1,162 @@
-// OP Posts Filter
-let isOPOnly = false;
+// OP Posts Filter with Performance Optimizations
+// Use the cross-browser API wrapper
+const opFilterAPI = (typeof BrowserAPI !== 'undefined') ? BrowserAPI : 
+                    (typeof browser !== 'undefined') ? browser : chrome;
 
-// Function to get the OP's username
-function getOPUsername() {
-    // Look for the OP indicator under the thread title
-    const opIndicator = document.querySelector('li:has(i[title="OP"])');
-    if (opIndicator) {
-        const usernameElement = opIndicator.querySelector('.username');
+// Message constants - wait for them to be available
+function waitForMessageConstants() {
+    return new Promise((resolve) => {
+        if (window.BetterLooksmaxMessages) {
+            resolve();
+        } else {
+            const checkInterval = setInterval(() => {
+                if (window.BetterLooksmaxMessages) {
+                    clearInterval(checkInterval);
+                    resolve();
+                }
+            }, 10);
+        }
+    });
+}
+
+// Register with message router for bidirectional sync
+async function registerWithMessageRouter() {
+    await waitForMessageConstants();
+    
+    if (window.BetterLooksmaxRouter) {
+        window.BetterLooksmaxRouter.registerFeature('opFilter', handleMessage);
+        console.log('[OPFilter] Registered with message router');
+    } else {
+        // Wait for router to be available
+        setTimeout(registerWithMessageRouter, 100);
+    }
+}
+
+// Handle messages from popup/other components
+function handleMessage(message) {
+    const { MESSAGE_TYPES, SETTINGS_KEYS } = window.BetterLooksmaxMessages;
+    
+    if (message.type === MESSAGE_TYPES.SETTING_CHANGED) {
+        const { setting, enabled } = message;
+        
+        if (setting === SETTINGS_KEYS.OP_FILTER) {
+            console.log(`[OPFilter] Received setting change: ${setting} = ${enabled}`);
+            
+            // Update OP filter state
+            isOPOnly = enabled;
+            updateFilterState(enabled);
+        }
+    }
+}
+
+// Update filter state
+function updateFilterState(enabled) {
+    console.log(`[OPFilter] Filter state updated: ${enabled}`);
+    // This will need to call the existing toggle function when I can see it
+}
+
+// Performance utilities (scoped to avoid conflicts)
+var opPerformanceUtils = null;
+var opElementCache = null;
+var opEventManager = null;
+var opThrottledOperations = null;
+
+// Initialize performance utilities
+function initPerformanceUtils() {
+    if (window.BetterLooksmaxPerformance && !opPerformanceUtils) {
+        opPerformanceUtils = window.BetterLooksmaxPerformance;
+        opElementCache = opPerformanceUtils.cache;
+        opEventManager = new opPerformanceUtils.EventManager();
+        
+        // Create throttled operations
+        opThrottledOperations = {
+            togglePosts: opPerformanceUtils.throttle(toggleOPPostsOptimized, 250),
+            ensureButton: opPerformanceUtils.throttle(ensureButtonAddedOptimized, 300),
+            getOPUsername: opPerformanceUtils.throttle(getOPUsernameOptimized, 500)
+        };
+        
+        console.log('[OPFilter] Performance utilities initialized');
+    }
+}
+
+// Try to initialize immediately or wait for performance utils
+if (window.BetterLooksmaxPerformance) {
+    initPerformanceUtils();
+} else {
+    const checkForUtils = () => {
+        if (window.BetterLooksmaxPerformance) {
+            initPerformanceUtils();
+        } else {
+            setTimeout(checkForUtils, 100);
+        }
+    };
+    checkForUtils();
+}
+
+let isOPOnly = false;
+let cachedOPUsername = null;
+let cachedButton = null;
+
+// Cache for processed elements
+const processedPosts = new WeakSet();
+const hiddenPosts = new Set();
+
+// Optimized OP username detection using element caching
+function getOPUsernameOptimized() {
+    if (cachedOPUsername) {
+        return cachedOPUsername;
+    }
+    
+    if (!opElementCache) {
+        return getOPUsername(); // Fallback
+    }
+    
+    // Look for OP indicator using cached elements
+    const opIcons = opElementCache.get('i[title="OP"]');
+    for (const opIcon of opIcons) {
+        const listItem = opIcon.closest('li');
+        if (listItem) {
+            const usernameElement = listItem.querySelector('.username');
+            if (usernameElement) {
+                cachedOPUsername = usernameElement.textContent.trim();
+                console.log('[OPFilter] Found OP username (optimized):', cachedOPUsername);
+                return cachedOPUsername;
+            }
+        }
+    }
+
+    // Fallback to first post if OP indicator not found
+    const firstPost = opElementCache.getSingle('.message--post');
+    if (firstPost) {
+        const usernameElement = firstPost.querySelector('.username');
         if (usernameElement) {
-            return usernameElement.textContent.trim();
+            cachedOPUsername = usernameElement.textContent.trim();
+            console.log('[OPFilter] Found OP username from first post (optimized):', cachedOPUsername);
+            return cachedOPUsername;
+        }
+    }
+
+    return null;
+}
+
+// Original function as fallback
+function getOPUsername() {
+    if (cachedOPUsername) {
+        return cachedOPUsername;
+    }
+    
+    console.log('[OPFilter] Getting OP username (fallback)...');
+    // Look for OP indicator using more efficient selector
+    const opIcons = document.querySelectorAll('i[title="OP"]');
+    for (let i = 0; i < opIcons.length; i++) {
+        const opIcon = opIcons[i];
+        const listItem = opIcon.closest('li');
+        if (listItem) {
+            const usernameElement = listItem.querySelector('.username');
+            if (usernameElement) {
+                cachedOPUsername = usernameElement.textContent.trim();
+                return cachedOPUsername;
+            }
         }
     }
 
@@ -16,27 +164,93 @@ function getOPUsername() {
     const firstPost = document.querySelector('.message--post');
     if (firstPost) {
         const usernameElement = firstPost.querySelector('.username');
-        return usernameElement ? usernameElement.textContent.trim() : null;
+        if (usernameElement) {
+            cachedOPUsername = usernameElement.textContent.trim();
+            return cachedOPUsername;
+        }
     }
 
     return null;
 }
 
-// Function to toggle OP posts visibility
-function toggleOPPosts() {
-    const opUsername = getOPUsername();
-    if (!opUsername) return;
+// Optimized toggle function using performance utilities
+function toggleOPPostsOptimized() {
+    const opUsername = opThrottledOperations ? 
+        opThrottledOperations.getOPUsername() : 
+        (opElementCache ? getOPUsernameOptimized() : getOPUsername());
+    
+    if (!opUsername) {
+        console.warn('[OPFilter] No OP username found');
+        return;
+    }
 
     isOPOnly = !isOPOnly;
-    const button = document.querySelector('#op-filter-button');
-    if (button) {
-        button.setAttribute('aria-pressed', isOPOnly);
-        button.classList.toggle('is-active', isOPOnly);
-        button.title = isOPOnly ? 'Show All Posts' : 'Show Only OP Posts';
+    console.log(`[OPFilter] Toggling OP filter (optimized): ${isOPOnly}`);
+    
+    // Update button state
+    updateButtonState();
+
+    if (!opElementCache) {
+        toggleOPPosts(); // Fallback
+        return;
+    }
+
+    const posts = opElementCache.get('.message--post');
+    const operationsToProcess = [];
+    let visibleCount = 0;
+    let hiddenCount = 0;
+
+    posts.forEach(post => {
+        const usernameElement = post.querySelector('.username');
+        if (usernameElement) {
+            const isOP = usernameElement.textContent.trim() === opUsername;
+            
+            operationsToProcess.push(() => {
+                if (isOPOnly) {
+                    post.style.display = isOP ? '' : 'none';
+                    if (isOP) {
+                        visibleCount++;
+                        hiddenPosts.delete(post);
+                    } else {
+                        hiddenCount++;
+                        hiddenPosts.add(post);
+                    }
+                } else {
+                    post.style.display = '';
+                    hiddenPosts.delete(post);
+                }
+                processedPosts.add(post);
+            });
+        }
+    });
+
+    // Batch DOM operations
+    if (operationsToProcess.length > 0 && opPerformanceUtils) {
+        opPerformanceUtils.batchDOMOperations(operationsToProcess).then(() => {
+            console.log(`[OPFilter] Processed ${posts.length} posts: ${visibleCount} visible, ${hiddenCount} hidden`);
+        });
+    }
+
+    // Save state
+    opFilterAPI.storage.local.set({ isOPOnly });
+}
+
+// Helper function to update button state
+function updateButtonState() {
+    if (!cachedButton) {
+        cachedButton = opElementCache ? 
+            opElementCache.getSingle('#op-filter-button') : 
+            document.querySelector('#op-filter-button');
+    }
+    
+    if (cachedButton) {
+        cachedButton.setAttribute('aria-pressed', isOPOnly);
+        cachedButton.classList.toggle('is-active', isOPOnly);
+        cachedButton.title = isOPOnly ? 'Show All Posts' : 'Show Only OP Posts';
         
         // Update icon and text
-        const icon = button.querySelector('i');
-        const text = button.querySelector('.button-text');
+        const icon = cachedButton.querySelector('i');
+        const text = cachedButton.querySelector('.button-text');
         
         if (isOPOnly) {
             icon.className = 'fas fa-user-check';
@@ -48,12 +262,25 @@ function toggleOPPosts() {
             text.style.color = '';
         }
     }
+}
+
+// Original function as fallback
+function toggleOPPosts() {
+    const opUsername = getOPUsername();
+    if (!opUsername) return;
+
+    isOPOnly = !isOPOnly;
+    console.log(`[OPFilter] Toggling OP filter (fallback): ${isOPOnly}`);
+    
+    updateButtonState();
 
     const posts = document.querySelectorAll('.message--post');
     let visibleCount = 0;
     let hiddenCount = 0;
 
-    posts.forEach(post => {
+    // Use for loop for better performance with early exit
+    for (let i = 0; i < posts.length; i++) {
+        const post = posts[i];
         const usernameElement = post.querySelector('.username');
         if (usernameElement) {
             const isOP = usernameElement.textContent.trim() === opUsername;
@@ -65,10 +292,11 @@ function toggleOPPosts() {
                 post.style.display = '';
             }
         }
-    });
+    }
 
+    console.log(`[OPFilter] Processed ${posts.length} posts: ${visibleCount} visible, ${hiddenCount} hidden`);
     // Save state
-    chrome.storage.local.set({ isOPOnly });
+    opFilterAPI.storage.local.set({ isOPOnly });
 }
 
 // Function to create and add the OP filter button
@@ -78,7 +306,7 @@ function createOPFilterButton() {
 
     const button = document.createElement('a');
     button.id = 'op-filter-button';
-    button.href = 'javascript:void(0)';
+    button.href = '#';
     button.className = 'button--link button';
     button.setAttribute('aria-pressed', 'false');
     button.title = 'Show Only OP Posts';
@@ -108,11 +336,21 @@ function createOPFilterButton() {
     button.appendChild(icon);
     button.appendChild(text);
 
-    // Add click handler
-    button.addEventListener('click', (e) => {
+    // Add click handler with proper event management
+    const clickHandler = (e) => {
         e.preventDefault();
-        toggleOPPosts();
-    });
+        if (opThrottledOperations) {
+            opThrottledOperations.togglePosts();
+        } else {
+            toggleOPPosts();
+        }
+    };
+    
+    if (opEventManager) {
+        opEventManager.addListener(button, 'click', clickHandler);
+    } else {
+        button.addEventListener('click', clickHandler);
+    }
 
     // Find the button group
     const buttonGroup = document.querySelector('.block-outer-opposite .buttonGroup');
@@ -131,77 +369,291 @@ function createOPFilterButton() {
     }
 }
 
-// Function to ensure the button is added
+// Optimized button creation check
+function ensureButtonAddedOptimized() {
+    if (!opElementCache) {
+        ensureButtonAdded(); // Fallback
+        return;
+    }
+    
+    const existingButton = opElementCache.getSingle('#op-filter-button');
+    if (!existingButton) {
+        createOPFilterButtonOptimized();
+    }
+}
+
+// Optimized button creation
+function createOPFilterButtonOptimized() {
+    if (!opElementCache) {
+        createOPFilterButton(); // Fallback
+        return;
+    }
+    
+    // Check if button already exists
+    const existingButton = opElementCache.getSingle('#op-filter-button');
+    if (existingButton) return;
+    
+    // Find the button group with caching
+    const buttonGroup = opElementCache.getSingle('.block-outer-opposite .buttonGroup') ||
+                      opElementCache.getSingle('.block-outer .buttonGroup') ||
+                      opElementCache.getSingle('.buttonGroup');
+    
+    if (buttonGroup) {
+        const button = createButtonElement();
+        
+        // Insert before the NSFW button
+        const nsfwButton = buttonGroup.querySelector('.nsfw-button');
+        if (nsfwButton) {
+            buttonGroup.insertBefore(button, nsfwButton);
+        } else {
+            buttonGroup.appendChild(button);
+        }
+        
+        console.log('[OPFilter] Button created and added (optimized)');
+    } else {
+        // Use waitForElement utility if available
+        if (opPerformanceUtils) {
+            opPerformanceUtils.waitForElement('.buttonGroup', 5000)
+                .then(buttonGroup => {
+                    const button = createButtonElement();
+                    buttonGroup.appendChild(button);
+                    console.log('[OPFilter] Button created after waiting for element');
+                })
+                .catch(() => {
+                    console.warn('[OPFilter] Button group not found after waiting');
+                });
+        } else {
+            // Fallback retry
+            setTimeout(() => createOPFilterButtonOptimized(), 1000);
+        }
+    }
+}
+
+// Helper function to create button element
+function createButtonElement() {
+    const button = document.createElement('a');
+    button.id = 'op-filter-button';
+    button.href = '#';
+    button.className = 'button--link button';
+    button.setAttribute('aria-pressed', 'false');
+    button.title = 'Show Only OP Posts';
+    button.style.cssText = `
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        margin-left: 8px;
+    `;
+
+    // Create icon
+    const icon = document.createElement('i');
+    icon.className = 'fas fa-user';
+    icon.style.cssText = `
+        font-size: 16px;
+        transition: all 0.2s;
+    `;
+
+    // Create text
+    const text = document.createElement('span');
+    text.className = 'button-text';
+    text.textContent = 'OP';
+    text.style.cssText = `
+        transition: color 0.2s;
+    `;
+
+    button.appendChild(icon);
+    button.appendChild(text);
+
+    // Add click handler with proper event management
+    const clickHandler = (e) => {
+        e.preventDefault();
+        if (opThrottledOperations) {
+            opThrottledOperations.togglePosts();
+        } else {
+            toggleOPPosts();
+        }
+    };
+    
+    if (opEventManager) {
+        opEventManager.addListener(button, 'click', clickHandler);
+    } else {
+        button.addEventListener('click', clickHandler);
+    }
+    
+    return button;
+}
+
+// Original function as fallback
 function ensureButtonAdded() {
     if (!document.querySelector('#op-filter-button')) {
         createOPFilterButton();
     }
 }
 
-// Load saved state
-chrome.storage.local.get(['isOPOnly'], (result) => {
-    isOPOnly = result.isOPOnly || false;
+// Load saved state with optimization
+opFilterAPI.storage.local.get(['isOPOnly'], (result) => {
+    // Validate storage data before using
+    const validated = window.StorageValidator ? 
+        window.StorageValidator.validateStorageData(result) : result;
+    isOPOnly = validated.isOPOnly === true;
     if (isOPOnly) {
-        // Wait for posts to load before applying filter with throttling
-        let stateThrottled = false;
-        const stateObserver = new MutationObserver((mutations, obs) => {
-            if (!stateThrottled && document.querySelector('.message--post')) {
-                stateThrottled = true;
+        console.log('[OPFilter] Restoring OP-only state');
+        
+        if (opPerformanceUtils) {
+            // Use waitForElement utility
+            opPerformanceUtils.waitForElement('.message--post', 5000)
+                .then(() => {
+                    if (opThrottledOperations) {
+                        opThrottledOperations.togglePosts();
+                    } else {
+                        toggleOPPosts();
+                    }
+                })
+                .catch(() => {
+                    console.warn('[OPFilter] Posts not found when restoring state');
+                });
+        } else {
+            // Fallback to mutation observer
+            let stateThrottled = false;
+            const stateObserver = new MutationObserver((mutations, obs) => {
+                if (!stateThrottled && document.querySelector('.message--post')) {
+                    stateThrottled = true;
+                    requestAnimationFrame(() => {
+                        toggleOPPosts();
+                        obs.disconnect();
+                    });
+                }
+            });
+
+            stateObserver.observe(document.body, {
+                childList: true,
+                subtree: true
+            });
+        }
+    }
+});
+
+// Create optimized observer for dynamic content
+let opContentObserver = null;
+
+function initializeOPObserver() {
+    if (opContentObserver) return;
+
+    if (opPerformanceUtils) {
+        // Use optimized FilteredMutationObserver
+        const throttledProcess = opPerformanceUtils.throttle(() => {
+            if (opThrottledOperations) {
+                opThrottledOperations.ensureButton();
+            } else {
+                ensureButtonAdded();
+            }
+        }, 300);
+
+        opContentObserver = new opPerformanceUtils.FilteredMutationObserver(throttledProcess);
+        
+        // Add intelligent filters for relevant mutations only
+        opContentObserver.addFilter(mutation => {
+            return mutation.type === 'childList' && 
+                   mutation.addedNodes.length > 0 &&
+                   Array.from(mutation.addedNodes).some(node => 
+                       node.nodeType === Node.ELEMENT_NODE &&
+                       (node.matches && (
+                           node.matches('.buttonGroup') || 
+                           node.matches('.message--post') ||
+                           node.matches('.block-outer')
+                       )) ||
+                       (node.querySelector && (
+                           node.querySelector('.buttonGroup') ||
+                           node.querySelector('.message--post') ||
+                           node.querySelector('.block-outer')
+                       ))
+                   );
+        });
+        
+        opContentObserver.observe(document.body);
+    } else {
+        // Fallback to improved basic observer
+        let contentThrottled = false;
+        opContentObserver = new MutationObserver((mutations) => {
+            if (!contentThrottled) {
+                contentThrottled = true;
                 requestAnimationFrame(() => {
-                    toggleOPPosts();
-                    obs.disconnect();
+                    let hasRelevantNodes = false;
+                    for (const mutation of mutations) {
+                        if (mutation.addedNodes.length) {
+                            for (const node of mutation.addedNodes) {
+                                if (node.nodeType === Node.ELEMENT_NODE && 
+                                    (node.classList?.contains('buttonGroup') || 
+                                     node.classList?.contains('message--post') ||
+                                     node.classList?.contains('block-outer') ||
+                                     node.querySelector?.('.buttonGroup, .message--post, .block-outer'))) {
+                                    hasRelevantNodes = true;
+                                    break;
+                                }
+                            }
+                        }
+                        if (hasRelevantNodes) break;
+                    }
+                    
+                    if (hasRelevantNodes) {
+                        ensureButtonAdded();
+                    }
+                    setTimeout(() => { contentThrottled = false; }, 300);
                 });
             }
         });
-
-        stateObserver.observe(document.body, {
+        
+        opContentObserver.observe(document.body, {
             childList: true,
             subtree: true
         });
     }
-});
+}
 
 // Initialize when the page is loaded
 if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', ensureButtonAdded);
+    document.addEventListener('DOMContentLoaded', () => {
+        if (opThrottledOperations) {
+            opThrottledOperations.ensureButton();
+        } else {
+            ensureButtonAdded();
+        }
+        initializeOPObserver();
+    });
 } else {
-    ensureButtonAdded();
-}
-
-// Also try to initialize when new content is loaded with throttling
-let contentThrottled = false;
-const contentObserver = new MutationObserver((mutations) => {
-    if (!contentThrottled) {
-        contentThrottled = true;
-        requestAnimationFrame(() => {
-            for (const mutation of mutations) {
-                if (mutation.addedNodes.length) {
-                    ensureButtonAdded();
-                    break;
-                }
-            }
-            setTimeout(() => { contentThrottled = false; }, 100);
-        });
-    }
-});
-
-contentObserver.observe(document.body, {
-    childList: true,
-    subtree: true
-});
-
-// Additional retry mechanism
-let retryCount = 0;
-const maxRetries = 3;
-const retryInterval = 2000;
-
-function retryButtonCreation() {
-    if (retryCount < maxRetries) {
+    if (opThrottledOperations) {
+        opThrottledOperations.ensureButton();
+    } else {
         ensureButtonAdded();
-        retryCount++;
-        setTimeout(retryButtonCreation, retryInterval);
     }
+    initializeOPObserver();
 }
 
-// Start retry mechanism
-retryButtonCreation(); 
+// Cleanup function for memory leak prevention
+function cleanup() {
+    if (opContentObserver) {
+        opContentObserver.disconnect();
+        opContentObserver = null;
+    }
+    if (opEventManager) {
+        opEventManager.cleanup();
+    }
+    cachedOPUsername = null;
+    cachedButton = null;
+    hiddenPosts.clear();
+    console.log('[OPFilter] Cleanup completed');
+}
+
+// Add cleanup on page unload
+// Initialize message router registration
+registerWithMessageRouter();
+
+window.addEventListener('beforeunload', cleanup);
+
+// Expose functions for testing
+if (typeof global !== 'undefined') {
+    global.getOPUsername = getOPUsername;
+    global.toggleOPPosts = toggleOPPosts;
+    global.createOPFilterButton = createOPFilterButton;
+    global.ensureButtonAdded = ensureButtonAdded;
+    global.isOPOnly = isOPOnly;
+} 

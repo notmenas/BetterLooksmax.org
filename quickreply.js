@@ -1,6 +1,10 @@
 // Quick Reply System for looksmax.org - Redesigned
 (function() {
     'use strict';
+    
+    // Use the cross-browser API wrapper
+    const quickReplyAPI = (typeof BrowserAPI !== 'undefined') ? BrowserAPI : 
+                          (typeof browser !== 'undefined') ? browser : chrome;
 
     // Default quick reply templates
     const defaultTemplates = {
@@ -17,10 +21,10 @@
 
     // Initialize quick replies
     function initQuickReplies() {
-        chrome.storage.local.get(['quickReplies'], function(result) {
+        quickReplyAPI.storage.local.get(['quickReplies'], function(result) {
             quickReplies = result.quickReplies || { ...defaultTemplates };
             if (!result.quickReplies) {
-                chrome.storage.local.set({ quickReplies: quickReplies });
+                quickReplyAPI.storage.local.set({ quickReplies: quickReplies });
             }
             addReplyButtonsToActionBars();
             observeNewPosts();
@@ -37,7 +41,7 @@
             if (replyBtn) {
                 const quickReplyBtn = document.createElement('a');
                 quickReplyBtn.className = 'actionBar-action quick-reply-action';
-                quickReplyBtn.href = 'javascript:void(0)';
+                quickReplyBtn.href = '#';
                 quickReplyBtn.title = 'Quick Reply';
                 // Create button content safely
                 const boltIcon = document.createElement('i');
@@ -167,7 +171,7 @@
                 e.stopPropagation();
                 if (confirm(`Delete "${key}" quick reply?`)) {
                     delete quickReplies[key];
-                    chrome.storage.local.set({ quickReplies: quickReplies });
+                    quickReplyAPI.storage.local.set({ quickReplies: quickReplies });
                     menu.remove();
                     showQuickReplyMenu(targetElement, actionBar);
                 }
@@ -435,7 +439,7 @@
             const reply = replyInput.value.trim();
             if (shortcut && reply) {
                 quickReplies[shortcut] = reply;
-                chrome.storage.local.set({ quickReplies: quickReplies });
+                quickReplyAPI.storage.local.set({ quickReplies: quickReplies });
                 insertAndSendReply(reply, actionBar);
                 overlay.remove();
                 document.querySelector('.quick-reply-menu')?.remove();

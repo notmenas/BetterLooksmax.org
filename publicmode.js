@@ -1,28 +1,143 @@
+// Public Mode with Performance Optimizations
+// Use the cross-browser API wrapper
+const publicModeAPI = (typeof BrowserAPI !== 'undefined') ? BrowserAPI : 
+                      (typeof browser !== 'undefined') ? browser : chrome;
+
+// Message constants - wait for them to be available
+function waitForMessageConstants() {
+    return new Promise((resolve) => {
+        if (window.BetterLooksmaxMessages) {
+            resolve();
+        } else {
+            const checkInterval = setInterval(() => {
+                if (window.BetterLooksmaxMessages) {
+                    clearInterval(checkInterval);
+                    resolve();
+                }
+            }, 10);
+        }
+    });
+}
+
+// Register with message router for bidirectional sync
+async function registerWithMessageRouter() {
+    await waitForMessageConstants();
+    
+    if (window.BetterLooksmaxRouter) {
+        window.BetterLooksmaxRouter.registerFeature('publicMode', handleMessage);
+        console.log('[PublicMode] Registered with message router');
+    } else {
+        // Wait for router to be available
+        setTimeout(registerWithMessageRouter, 100);
+    }
+}
+
+// Handle messages from popup/other components
+function handleMessage(message) {
+    const { MESSAGE_TYPES, SETTINGS_KEYS } = window.BetterLooksmaxMessages;
+    
+    if (message.type === MESSAGE_TYPES.SETTING_CHANGED) {
+        const { setting, enabled } = message;
+        
+        if (setting === SETTINGS_KEYS.PUBLIC_MODE || setting === SETTINGS_KEYS.IS_PUBLIC_MODE) {
+            console.log(`[PublicMode] Received setting change: ${setting} = ${enabled}`);
+            
+            // Update our internal state without triggering another popup notification
+            isPublicMode = enabled;
+            
+            // Update button appearance and apply/remove public mode
+            updatePublicButtonState(enabled);
+            
+            if (enabled) {
+                applyPublicModeStyles();
+            } else {
+                removePublicModeStyles();
+            }
+        }
+    }
+}
+
+// Update button state without triggering events
+function updatePublicButtonState(enabled) {
+    const button = document.querySelector('.public-mode-button');
+    if (button) {
+        button.classList.toggle('is-active', enabled);
+        const icon = button.querySelector('i');
+        if (enabled) {
+            icon.className = 'fas fa-eye';
+            button.setAttribute('title', 'Exit Public Mode');
+            button.setAttribute('aria-label', 'Exit Public Mode');
+        } else {
+            icon.className = 'fas fa-eye-slash';
+            button.setAttribute('title', 'Public Mode');
+            button.setAttribute('aria-label', 'Public Mode');
+        }
+    }
+}
+
+// Performance utilities (scoped to avoid conflicts)
+var publicPerformanceUtils = null;
+var publicElementCache = null;
+var publicEventManager = null;
+var publicThrottledOperations = null;
+
+// Initialize performance utilities
+function initPerformanceUtils() {
+    if (window.BetterLooksmaxPerformance && !publicPerformanceUtils) {
+        publicPerformanceUtils = window.BetterLooksmaxPerformance;
+        publicElementCache = publicPerformanceUtils.cache;
+        publicEventManager = new publicPerformanceUtils.EventManager();
+        
+        // Create throttled operations
+        publicThrottledOperations = {
+            replaceText: publicPerformanceUtils.throttle(replaceTextContentOptimized, 300),
+            restoreText: publicPerformanceUtils.throttle(restoreTextContentOptimized, 200)
+        };
+        
+        console.log('[PublicMode] Performance utilities initialized');
+    }
+}
+
+// Try to initialize immediately or wait for performance utils
+if (window.BetterLooksmaxPerformance) {
+    initPerformanceUtils();
+} else {
+    const checkForUtils = () => {
+        if (window.BetterLooksmaxPerformance) {
+            initPerformanceUtils();
+        } else {
+            setTimeout(checkForUtils, 100);
+        }
+    };
+    checkForUtils();
+}
+
 let isPublicMode = false;
+
+// Cache for text replacement operations
+const textReplacementCache = new Map();
+let processedTextNodes = new WeakSet();
 
 function togglePublicMode() {
     isPublicMode = !isPublicMode;
 
     // Save state
-    chrome.storage.local.set({ isPublicMode });
+    publicModeAPI.storage.local.set({ isPublicMode });
 
-    // Update button appearance
-    const button = document.querySelector('.public-mode-button');
-    if (button) {
-        button.classList.toggle('is-active', isPublicMode);
-        const icon = button.querySelector('i');
+    // Update button state
+    updatePublicButtonState(isPublicMode);
 
-        if (isPublicMode) {
-            icon.className = 'fas fa-eye';
-            button.setAttribute('title', 'Exit Public Mode');
-            button.setAttribute('aria-label', 'Exit Public Mode');
-            applyPublicModeStyles();
-        } else {
-            icon.className = 'fas fa-eye-slash';
-            button.setAttribute('title', 'Public Mode');
-            button.setAttribute('aria-label', 'Public Mode');
-            removePublicModeStyles();
-        }
+    // Apply or remove public mode
+    if (isPublicMode) {
+        applyPublicModeStyles();
+    } else {
+        removePublicModeStyles();
+    }
+
+    // Notify popup of state change for bidirectional sync
+    if (window.BetterLooksmaxRouter) {
+        window.BetterLooksmaxRouter.notifyPopup('publicMode', isPublicMode);
+        window.BetterLooksmaxRouter.notifyPopup('isPublicMode', isPublicMode);
     }
 }
 
@@ -91,7 +206,11 @@ function applyPublicModeStyles() {
     }
     
     // Replace "looksmax" text with "finance" (visual only)
-    replaceTextContent();
+    if (publicThrottledOperations) {
+        publicThrottledOperations.replaceText();
+    } else {
+        replaceTextContent();
+    };
     
     // Don't show notification to avoid constant popups
 }
@@ -104,7 +223,11 @@ function removePublicModeStyles() {
     }
     
     // Restore original text content
-    restoreTextContent();
+    if (publicThrottledOperations) {
+        publicThrottledOperations.restoreText();
+    } else {
+        restoreTextContent();
+    };
     
     // Remove any notifications
     const notification = document.querySelector('.public-mode-notification');
@@ -113,7 +236,96 @@ function removePublicModeStyles() {
     }
 }
 
+// Optimized text replacement using performance utilities
+function replaceTextContentOptimized() {
+    if (!publicPerformanceUtils) {
+        replaceTextContent(); // Fallback
+        return;
+    }
+
+    console.log('[PublicMode] Replacing text content (optimized)...');
+    
+    // Store original text content for restoration
+    if (!window.originalTextContent) {
+        window.originalTextContent = new Map();
+    }
+
+    const textReplacements = [
+        { from: /Looksmaxing/gi, to: 'Finance' },
+        { from: /Looksmaxxing/gi, to: 'Finance' },
+        { from: /Looksmax/gi, to: 'Finance' },
+        { from: /nigger/gi, to: 'Black' }
+    ];
+
+    // Use document fragment for batched operations
+    const operationsToProcess = [];
+    
+    // Create optimized walker that avoids reprocessing
+    const walker = document.createTreeWalker(
+        document.body,
+        NodeFilter.SHOW_TEXT,
+        {
+            acceptNode: function(node) {
+                // Skip already processed nodes
+                if (processedTextNodes.has(node)) {
+                    return NodeFilter.FILTER_REJECT;
+                }
+                
+                // Skip input fields, textareas, and editable content
+                const parent = node.parentElement;
+                if (parent && (
+                    parent.tagName === 'INPUT' ||
+                    parent.tagName === 'TEXTAREA' ||
+                    parent.isContentEditable ||
+                    parent.closest('[contenteditable="true"]') ||
+                    parent.closest('input') ||
+                    parent.closest('textarea')
+                )) {
+                    return NodeFilter.FILTER_REJECT;
+                }
+
+                return /(looksmaxxing|looksmax|nigger)/i.test(node.textContent) ?
+                    NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
+            }
+        }
+    );
+
+    const textNodes = [];
+    let node;
+    while (node = walker.nextNode()) {
+        textNodes.push(node);
+    }
+
+    // Batch text replacement operations
+    textNodes.forEach(textNode => {
+        if (!processedTextNodes.has(textNode)) {
+            operationsToProcess.push(() => {
+                if (!window.originalTextContent.has(textNode)) {
+                    window.originalTextContent.set(textNode, textNode.textContent);
+                }
+                
+                let content = textNode.textContent;
+                textReplacements.forEach(({ from, to }) => {
+                    content = content.replace(from, to);
+                });
+                
+                textNode.textContent = content;
+                processedTextNodes.add(textNode);
+            });
+        }
+    });
+
+    // Process operations in batches
+    if (operationsToProcess.length > 0) {
+        publicPerformanceUtils.batchDOMOperations(operationsToProcess).then(() => {
+            console.log(`[PublicMode] Processed ${operationsToProcess.length} text nodes`);
+        });
+    }
+}
+
+// Original function as fallback
 function replaceTextContent() {
+    console.log('[PublicMode] Replacing text content (fallback)...');
     // Store original text content for restoration
     if (!window.originalTextContent) {
         window.originalTextContent = new Map();
@@ -138,7 +350,7 @@ function replaceTextContent() {
                     return NodeFilter.FILTER_REJECT;
                 }
 
-                return /(looksmaxxing|looksmax|nigger|looksmaxxing)/i.test(node.textContent) ?
+                return /(looksmaxxing|looksmax|nigger)/i.test(node.textContent) ?
                     NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
             }
         }
@@ -155,7 +367,6 @@ function replaceTextContent() {
             window.originalTextContent.set(textNode, textNode.textContent);
         }
         textNode.textContent = textNode.textContent
-
             .replace(/Looksmaxing/gi, 'Finance')
             .replace(/Looksmaxxing/gi, 'Finance')
             .replace(/Looksmax/gi, 'Finance')
@@ -163,7 +374,37 @@ function replaceTextContent() {
     });
 }
 
+// Optimized text restoration using performance utilities
+function restoreTextContentOptimized() {
+    if (!publicPerformanceUtils || !window.originalTextContent || window.originalTextContent.size === 0) {
+        restoreTextContent(); // Fallback
+        return;
+    }
+
+    console.log('[PublicMode] Restoring text content (optimized)...');
+    const operationsToProcess = [];
+    
+    window.originalTextContent.forEach((originalText, textNode) => {
+        if (textNode.parentNode) {
+            operationsToProcess.push(() => {
+                textNode.textContent = originalText;
+            });
+        }
+    });
+
+    // Batch text restoration operations
+    if (operationsToProcess.length > 0) {
+        publicPerformanceUtils.batchDOMOperations(operationsToProcess).then(() => {
+            window.originalTextContent.clear();
+            processedTextNodes = new WeakSet(); // Reset processed nodes
+            console.log(`[PublicMode] Restored ${operationsToProcess.length} text nodes`);
+        });
+    }
+}
+
+// Original function as fallback
 function restoreTextContent() {
+    console.log('[PublicMode] Restoring text content (fallback)...');
     if (window.originalTextContent) {
         window.originalTextContent.forEach((originalText, textNode) => {
             if (textNode.parentNode) {
@@ -213,7 +454,7 @@ function showPublicModeNotification() {
 
 function createPublicModeButton() {
     const button = document.createElement('a');
-    button.href = 'javascript:void(0)';
+    button.href = '#';
     button.className = 'p-navgroup-link p-navgroup-link--iconic';
     button.setAttribute('title', 'Public Mode - Hide identifying content');
     button.setAttribute('aria-label', 'Public Mode - Hide identifying content');
@@ -224,23 +465,39 @@ function createPublicModeButton() {
 
     button.appendChild(icon);
 
-    // Add click handler
-    button.addEventListener('click', (e) => {
+    // Add click handler with proper event management
+    const clickHandler = (e) => {
         e.preventDefault();
         togglePublicMode();
-    });
+    };
+    
+    if (publicEventManager) {
+        publicEventManager.addListener(button, 'click', clickHandler);
+    } else {
+        button.addEventListener('click', clickHandler);
+    };
 
     return button;
 }
 
 function addPublicModeButton() {
-    // Find the navigation group
-    const navGroup = document.querySelector('.p-navgroup.p-discovery');
-    if (!navGroup) return;
+    // Find the navigation group with caching if available
+    const navGroup = publicElementCache ? 
+        publicElementCache.getSingle('.p-navgroup.p-discovery') : 
+        document.querySelector('.p-navgroup.p-discovery');
+    
+    if (!navGroup) {
+        console.warn('[PublicMode] Navigation group not found');
+        return;
+    }
 
     // Check if button already exists anywhere in the document
-    if (document.querySelector('.public-mode-button')) {
-        console.log('Public mode button already exists');
+    const existingButton = publicElementCache ? 
+        publicElementCache.getSingle('.public-mode-button') : 
+        document.querySelector('.public-mode-button');
+    
+    if (existingButton) {
+        console.log('[PublicMode] Button already exists');
         return;
     }
 
@@ -256,7 +513,7 @@ function addPublicModeButton() {
     }
 
     // Load saved state and apply it
-    chrome.storage.local.get(['isPublicMode'], (result) => {
+    publicModeAPI.storage.local.get(['isPublicMode'], (result) => {
         isPublicMode = result.isPublicMode || false;
         if (isPublicMode) {
             publicModeButton.classList.add('is-active');
@@ -266,17 +523,54 @@ function addPublicModeButton() {
     });
 }
 
-// Add keyboard shortcut (Ctrl+Shift+P)
-document.addEventListener('keydown', (e) => {
+// Add keyboard shortcut (Ctrl+Shift+P) with proper event management
+const keydownHandler = (e) => {
     if (e.ctrlKey && e.shiftKey && e.key === 'P') {
         e.preventDefault();
         togglePublicMode();
     }
-});
+};
+
+if (publicEventManager) {
+    publicEventManager.addListener(document, 'keydown', keydownHandler);
+} else {
+    document.addEventListener('keydown', keydownHandler);
+}
+
+// Cleanup function for memory leak prevention
+function cleanup() {
+    if (publicEventManager) {
+        publicEventManager.cleanup();
+    }
+    
+    // Clear text replacement cache
+    if (window.originalTextContent) {
+        window.originalTextContent.clear();
+    }
+    textReplacementCache.clear();
+    
+    console.log('[PublicMode] Cleanup completed');
+}
+
+// Add cleanup on page unload
+window.addEventListener('beforeunload', cleanup);
 
 // Initialize on DOM ready
 if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', addPublicModeButton);
+    document.addEventListener('DOMContentLoaded', () => {
+        registerWithMessageRouter();
+        addPublicModeButton();
+    });
 } else {
+    registerWithMessageRouter();
     addPublicModeButton();
+}
+
+// Expose functions for testing
+if (typeof global !== 'undefined') {
+    global.togglePublicMode = togglePublicMode;
+    global.replaceTextContent = replaceTextContent;
+    global.restoreTextContent = restoreTextContent;
+    global.addPublicModeButton = addPublicModeButton;
+    global.isPublicMode = isPublicMode;
 }

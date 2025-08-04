@@ -1,0 +1,61 @@
+{
+    "manifest_version": 3,
+    "name": "BetterLooksmax.org 1.0 - Open-source Extension for Looksmax.org",
+    "version": "1.0.0",
+    "description": "A comprehensive toolkit for Looksmax.org , filters, timers, and more quality-of-life improvements.",
+    
+    "permissions": [
+        "activeTab",
+        "storage",
+        "tabs"
+    ],
+    
+    "host_permissions": [
+        "https://looksmax.org/*",
+        "https://forum.looksmaxxing.com/*",
+        "https://lookism.cc/*"
+    ],
+    
+    "action": {
+        "default_popup": "popup/popup.html",
+        "default_title": "BetterLooksmax.org Tools"
+    },
+    
+    "background": {
+        "scripts": ["browser-api.js", "background.js"],
+        "persistent": false
+    },
+    
+    "content_scripts": [
+        {
+            "matches": [
+                "https://looksmax.org/*",
+                "https://forum.looksmaxxing.com/*",
+                "https://lookism.cc/*"
+            ],
+            "js": [
+                "custom-upload.js",
+                "browser-api.js",
+                "libs/purify.min.js",
+                "sanitizer.js",
+                "performance-utils.js",
+                "content.js", 
+                "greyfilter.js", 
+                "nsfwfilter.js", 
+                "publicmode.js", 
+                "quickreply.js",  
+                "opfilter.js", 
+                "text-presets.js", 
+                "timer.js"
+            ],
+            "run_at": "document_start"
+        }
+    ],
+
+    "browser_specific_settings": {
+        "gecko": {
+            "id": "betterlooksmax@github.com",
+            "strict_min_version": "109.0"
+        }
+    }
+}
