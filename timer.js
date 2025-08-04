@@ -456,9 +456,24 @@
         });
         
         document.getElementById('save-settings').addEventListener('click', () => {
+            // SECURITY FIX: Add input validation to prevent invalid values
+            const dailyLimitInput = parseFloat(document.getElementById('daily-limit-input').value);
+            const warningTimeInput = parseInt(document.getElementById('warning-time-input').value);
+            
+            // Validate inputs
+            if (isNaN(dailyLimitInput) || dailyLimitInput < 0.1 || dailyLimitInput > 24) {
+                alert('Daily limit must be between 0.1 and 24 hours');
+                return;
+            }
+            
+            if (isNaN(warningTimeInput) || warningTimeInput < 1 || warningTimeInput > 1440) {
+                alert('Warning time must be between 1 and 1440 minutes');
+                return;
+            }
+            
             const newSettings = {
-                dailyLimit: Math.round(parseFloat(document.getElementById('daily-limit-input').value) * 3600),
-                warningTime: parseInt(document.getElementById('warning-time-input').value) * 60,
+                dailyLimit: Math.round(dailyLimitInput * 3600),
+                warningTime: warningTimeInput * 60,
                 enabled: document.getElementById('enabled-checkbox').checked
             };
             

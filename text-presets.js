@@ -771,21 +771,31 @@ function createPresetButton() {
                     border: 1px solid #333;
                 `;
                 
-                const shortcutText = preset.shortcut ? `<span style="color: #888; font-size: 12px; margin-left: 10px;">${preset.shortcut}</span>` : '';
+                // SECURITY FIX: Escape HTML to prevent XSS
+                function escapeHtml(unsafe) {
+                    return unsafe
+                        .replace(/&/g, "&amp;")
+                        .replace(/</g, "&lt;")
+                        .replace(/>/g, "&gt;")
+                        .replace(/"/g, "&quot;")
+                        .replace(/'/g, "&#039;");
+                }
+                
+                const shortcutText = preset.shortcut ? `<span style="color: #888; font-size: 12px; margin-left: 10px;">${escapeHtml(preset.shortcut)}</span>` : '';
                 const isDefaultPreset = TEXT_PRESETS[id] !== undefined;
                 const presetType = isDefaultPreset ? '<span style="color: #666; font-size: 11px;">(default)</span>' : '<span style="color: #4a9eff; font-size: 11px;">(custom)</span>';
                 
                 presetCard.innerHTML = `
                     <div style="display: flex; align-items: center; gap: 10px;">
-                        <i class="${preset.icon}" style="font-size: 16px;"></i>
-                        <span>${preset.name}</span>
+                        <i class="${escapeHtml(preset.icon)}" style="font-size: 16px;"></i>
+                        <span>${escapeHtml(preset.name)}</span>
                         ${presetType}
                         ${shortcutText}
                     </div>
                     <div class="preset-actions">
-                        <button class="apply-preset button button--primary" data-preset-id="${id}" style="margin-right: 5px;">Apply</button>
-                        <button class="edit-preset button" data-preset-id="${id}" style="margin-right: 5px;">Edit</button>
-                        <button class="delete-preset button button--cta" data-preset-id="${id}">Delete</button>
+                        <button class="apply-preset button button--primary" data-preset-id="${escapeHtml(id)}" style="margin-right: 5px;">Apply</button>
+                        <button class="edit-preset button" data-preset-id="${escapeHtml(id)}" style="margin-right: 5px;">Edit</button>
+                        <button class="delete-preset button button--cta" data-preset-id="${escapeHtml(id)}">Delete</button>
                     </div>
                 `;
                 
@@ -1082,10 +1092,10 @@ function createPresetButton() {
                 
                 shortcutItem.innerHTML = `
                     <div>
-                        <span style="font-weight: bold;">${preset.name}${presetType}</span>
+                        <span style="font-weight: bold;">${escapeHtml(preset.name)}${escapeHtml(presetType)}</span>
                     </div>
                     <div>
-                        <input type="text" class="shortcut-input" value="${preset.shortcut}" data-preset-id="${id}" style="width: 150px; padding: 4px; background: #1a1a1a; border: 1px solid #444; color: #eee; border-radius: 4px;">
+                        <input type="text" class="shortcut-input" value="${escapeHtml(preset.shortcut)}" data-preset-id="${escapeHtml(id)}" style="width: 150px; padding: 4px; background: #1a1a1a; border: 1px solid #444; color: #eee; border-radius: 4px;">
                     </div>
                 `;
                 

@@ -470,25 +470,38 @@
             if (replyLink) {
                 const quoteUrl = replyLink.getAttribute('data-quote-href');
                 if (quoteUrl) {
-                    fetch(quoteUrl)
-                        .then(response => response.text())
-                        .then(() => {
-                            replyLink.click();
-                            const checkEditor = setInterval(() => {
-                                const editor = document.querySelector('.fr-element');
-                                if (editor) {
-                                    clearInterval(checkEditor);
-                                    editor.innerHTML = text;
-                                }
-                            }, 100);
-                        });
+                    // SECURITY FIX: Validate URL to prevent SSRF attacks
+                    try {
+                        const url = new URL(quoteUrl, window.location.origin);
+                        // Only allow same-origin requests
+                        if (url.origin === window.location.origin) {
+                            fetch(quoteUrl)
+                                .then(response => response.text())
+                                .then(() => {
+                                    replyLink.click();
+                                    const checkEditor = setInterval(() => {
+                                        const editor = document.querySelector('.fr-element');
+                                        if (editor) {
+                                            clearInterval(checkEditor);
+                                            // FIX: Use textContent instead of innerHTML to prevent XSS
+                                            editor.textContent = text;
+                                        }
+                                    }, 100);
+                                });
+                        } else {
+                            console.warn('SECURITY: Blocked cross-origin fetch request to:', quoteUrl);
+                        }
+                    } catch (error) {
+                        console.error('SECURITY: Invalid URL in data-quote-href:', quoteUrl, error);
+                    }
                 } else {
                     replyLink.click();
                     const checkEditor = setInterval(() => {
                         const editor = document.querySelector('.fr-element');
                         if (editor) {
                             clearInterval(checkEditor);
-                            editor.innerHTML = text;
+                            // FIX: Use textContent instead of innerHTML to prevent XSS
+                            editor.textContent = text;
                         }
                     }, 100);
                 }
@@ -496,7 +509,8 @@
         } else {
             const editor = document.querySelector('.fr-element');
             if (editor) {
-                editor.innerHTML = text;
+                // FIX: Use textContent instead of innerHTML to prevent XSS
+                editor.textContent = text;
             }
         }
     }
