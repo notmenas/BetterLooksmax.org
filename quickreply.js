@@ -499,6 +499,7 @@
                                 // Fallback if sanitizer not loaded
                                 editor.textContent = text;
                             }
+
                         }
                     }, 100);
                 }
