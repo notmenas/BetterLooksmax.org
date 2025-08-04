@@ -52,11 +52,17 @@
 
         // Create the button
         const button = document.createElement('a');
-        button.href = '#';
+        button.href = 'javascript:void(0)';
         button.className = 'button--link button';
         button.id = BUTTON_ID;
-        button.setAttribute('data-xf-click', 'overlay');
-        button.innerHTML = '<i class="fas fa-eye-slash"></i> <span class="button-text">NSFW Filter</span>';
+        const icon = document.createElement('i');
+        icon.className = 'fas fa-eye-slash';
+        const span = document.createElement('span');
+        span.className = 'button-text';
+        span.textContent = 'NSFW Filter';
+        button.appendChild(icon);
+        button.appendChild(document.createTextNode(' '));
+        button.appendChild(span);
         button.title = 'Toggle NSFW Filter';
 
         // Add click handler
@@ -64,7 +70,7 @@
             e.preventDefault();
             const isActive = this.classList.toggle('is-active');
             // Store the state
-            localStorage.setItem('nsfwFilterActive', isActive);
+            chrome.storage.local.set({ nsfwFilterActive: isActive });
             // Apply the filter
             applyNSFWFilter(isActive);
             
@@ -86,16 +92,17 @@
         buttonGroup.appendChild(button);
 
         // Check stored state and apply
-        const storedState = localStorage.getItem('nsfwFilterActive') === 'true';
-        if (storedState) {
-            button.classList.add('is-active');
-            const icon = button.querySelector('i');
-            const text = button.querySelector('.button-text');
-            icon.className = 'fas fa-eye';
-            text.textContent = 'NSFW';
-            button.style.color = '#4f46e5';
-            applyNSFWFilter(true);
-        }
+        chrome.storage.local.get(['nsfwFilterActive'], (result) => {
+            if (result.nsfwFilterActive) {
+                button.classList.add('is-active');
+                const icon = button.querySelector('i');
+                const text = button.querySelector('.button-text');
+                icon.className = 'fas fa-eye';
+                text.textContent = 'NSFW';
+                button.style.color = '#4f46e5';
+                applyNSFWFilter(true);
+            }
+        });
     }
 
     function isNSFWContent(content) {
@@ -152,16 +159,26 @@
     // Initial check
     checkAndAddButton();
 
-    // Set up mutation observer for dynamic content
+    // Set up mutation observer for dynamic content with throttling
+    let observerThrottled = false;
     const observer = new MutationObserver((mutations) => {
-        for (const mutation of mutations) {
-            if (mutation.addedNodes.length) {
-                debouncedCheck();
-                // Re-apply filter if active
-                if (localStorage.getItem('nsfwFilterActive') === 'true') {
-                    applyNSFWFilter(true);
+        if (!observerThrottled) {
+            observerThrottled = true;
+            requestAnimationFrame(() => {
+                for (const mutation of mutations) {
+                    if (mutation.addedNodes.length) {
+                        debouncedCheck();
+                        // Re-apply filter if active
+                        chrome.storage.local.get(['nsfwFilterActive'], (result) => {
+                            if (result.nsfwFilterActive) {
+                                applyNSFWFilter(true);
+                            }
+                        });
+                        break;
+                    }
                 }
-            }
+                setTimeout(() => { observerThrottled = false; }, 100);
+            });
         }
     });
 

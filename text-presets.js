@@ -136,7 +136,10 @@
         const container = popup.querySelector('#textGradientColorPoints');
         if (!container) return;
         
-        container.innerHTML = '';
+        // Clear container safely
+        while (container.firstChild) {
+            container.removeChild(container.firstChild);
+        }
         
         textGradientColorPoints.forEach((point, index) => {
             const element = createPresetColorPointElement(point, index, false);
@@ -167,7 +170,10 @@
         const container = popup.querySelector('#backgroundGradientColorPoints');
         if (!container) return;
         
-        container.innerHTML = '';
+        // Clear container safely
+        while (container.firstChild) {
+            container.removeChild(container.firstChild);
+        }
         
         backgroundGradientColorPoints.forEach((point, index) => {
             const element = createPresetColorPointElement(point, index, true);
@@ -201,29 +207,20 @@
         preview.style.background = `linear-gradient(to right, ${colors})`;
     }
 
-    // Storage helper functions
+    // Storage helper functions - using only chrome.storage for security
     const Storage = {
         async get(key) {
             try {
-                // Try localStorage first
-                const localData = localStorage.getItem(key);
-                if (localData) {
-                    return JSON.parse(localData);
-                }
-
-                // Fallback to chrome.storage if available
-                if (chrome && chrome.storage) {
-                    return new Promise((resolve) => {
-                        chrome.storage.local.get([key], (result) => {
-                            if (chrome.runtime.lastError) {
-                                resolve(null);
-                            } else {
-                                resolve(result[key]);
-                            }
-                        });
+                return new Promise((resolve) => {
+                    chrome.storage.local.get([key], (result) => {
+                        if (chrome.runtime.lastError) {
+                            console.warn('Storage get error:', chrome.runtime.lastError);
+                            resolve(null);
+                        } else {
+                            resolve(result[key] || null);
+                        }
                     });
-                }
-                return null;
+                });
             } catch (error) {
                 console.warn('Storage get error:', error);
                 return null;
@@ -240,37 +237,21 @@
                 // Try to serialize to catch any JSON errors early
                 const serializedValue = JSON.stringify(value);
                 
-                // Save to localStorage first
-                try {
-                    localStorage.setItem(key, serializedValue);
-                } catch (localStorageError) {
-                    console.warn('localStorage failed:', localStorageError);
-                    
-                    // If localStorage fails, check if it's a quota issue
-                    if (localStorageError.name === 'QuotaExceededError') {
-                        throw new Error('Storage quota exceeded. Please delete some presets or clear browser data.');
-                    } else {
-                        throw new Error('Failed to save to local storage: ' + localStorageError.message);
-                    }
-                }
-
-                // Also try to save to chrome.storage if available
-                if (chrome && chrome.storage) {
-                    return new Promise((resolve, reject) => {
-                        chrome.storage.local.set({ [key]: value }, () => {
-                            if (chrome.runtime.lastError) {
-                                console.warn('Chrome storage set failed:', chrome.runtime.lastError);
-                                // Don't reject here since localStorage succeeded
-                            resolve();
+                // Save to chrome.storage
+                return new Promise((resolve, reject) => {
+                    chrome.storage.local.set({ [key]: value }, () => {
+                        if (chrome.runtime.lastError) {
+                            console.error('Chrome storage set failed:', chrome.runtime.lastError);
+                            if (chrome.runtime.lastError.message && chrome.runtime.lastError.message.includes('quota')) {
+                                reject(new Error('Storage quota exceeded. Please delete some presets or clear browser data.'));
                             } else {
-                                resolve();
+                                reject(new Error('Failed to save to storage: ' + chrome.runtime.lastError.message));
                             }
-                        });
+                        } else {
+                            resolve();
+                        }
                     });
-                }
-                
-                return Promise.resolve();
-                
+                });
             } catch (error) {
                 console.error('Storage set error:', error);
                 throw error; // Re-throw the error so calling functions can handle it
@@ -376,151 +357,229 @@ function createPresetButton() {
             border: 1px solid #282828;
         `;
         
-        popup.innerHTML = `
-            <div class="overlay-title" style="margin-bottom: 20px;">
-                <h3 style="margin: 0; color: #eee; font-size: 18px;">Text Format Presets</h3>
-            </div>
-            <div class="block-body" style="margin-bottom: 20px;">
-                <div class="block-row" style="margin-bottom: 20px;">
-                    <div id="presetsContainer" style="max-height:200px;overflow-y:auto;margin-bottom:20px;"></div>
-                </div>
-                <div class="block-row" style="margin-bottom: 20px;">
-                    <button id="createPresetBtn" class="button button--primary" style="margin-right: 10px;">Create New Preset</button>
-                    <button id="manageShortcutsBtn" class="button button--primary">Manage Shortcuts</button>
-                </div>
-                <div id="createPresetForm" style="display: none; margin-top: 15px; border-top: 1px solid #333; padding-top: 15px;">
-                    <div style="margin-bottom: 10px;">
-                        <label style="display: block; margin-bottom: 5px; color: #eee;">Preset Name:</label>
-                        <input type="text" id="presetName" style="width: 100%; padding: 5px; background: #222; border: 1px solid #444; color: #eee; border-radius: 4px;">
-                    </div>
-                    <div style="margin-bottom: 10px;">
-                        <label style="display: block; margin-bottom: 5px; color: #eee;">Format Options:</label>
-                        <div style="display: flex; flex-wrap: wrap; gap: 10px;">
-                            <label style="display: flex; align-items: center; color: #eee;">
-                                <input type="checkbox" id="presetBold"> Bold
-                            </label>
-                            <label style="display: flex; align-items: center; color: #eee;">
-                                <input type="checkbox" id="presetItalic"> Italic
-                            </label>
-                            <div style="width: 100%; margin-top: 5px;">
-                                <label style="display: block; margin-bottom: 5px; color: #eee;">Font Size:</label>
-                                <select id="presetFontSize" style="width: 100%; padding: 5px; background: #222; border: 1px solid #444; color: #eee; border-radius: 4px;">
-                                    <option value="">Default</option>
-                                    <option value="9px">9</option>
-                                    <option value="10px">10</option>
-                                    <option value="11px">11</option>
-                                    <option value="12px">12</option>
-                                    <option value="13px">13</option>
-                                    <option value="14px">14</option>
-                                    <option value="15px">15</option>
-                                    <option value="16px">16</option>
-                                    <option value="17px">17</option>
-                                    <option value="18px">18</option>
-                                    <option value="19px">19</option>
-                                    <option value="20px">20</option>
-                                    <option value="22px">22</option>
-                                    <option value="24px">24</option>
-                                    <option value="26px">26</option>
-                                    <option value="28px">28</option>
-                                    <option value="30px">30</option>
-                                    <option value="32px">32</option>
-                                    <option value="34px">34</option>
-                                    <option value="36px">36</option>
-                                </select>
-                            </div>
-                            <div style="width: 100%; margin-top: 5px;">
-                                <label style="display: block; margin-bottom: 5px; color: #eee;">Font Family:</label>
-                                <select id="presetFontFamily" style="width: 100%; padding: 5px; background: #222; border: 1px solid #444; color: #eee; border-radius: 4px;">
-                                    <option value="">Default</option>
-                                    <option value="'Arial'">Arial</option>
-                                    <option value="'Book Antiqua'">Book Antiqua</option>
-                                    <option value="'Courier New'">Courier New</option>
-                                    <option value="'Georgia'">Georgia</option>
-                                    <option value="Tahoma">Tahoma</option>
-                                    <option value="'Times New Roman'">Times New Roman</option>
-                                    <option value="'Trebuchet MS'">Trebuchet MS</option>
-                                    <option value="'Verdana'">Verdana</option>
-                                </select>
-                            </div>
-                            <div style="width: 100%; margin-top: 5px;">
-                                <label style="display: block; margin-bottom: 5px; color: #eee;">Text Gradient:</label>
-                                <div id="gradientOptions" style="margin-bottom: 10px;">
-                                    <select id="gradientType" style="width: 100%; padding: 5px; background: #222; border: 1px solid #444; color: #eee; border-radius: 4px; margin-bottom: 10px;">
-                                        <option value="">None</option>
-                                        <option value="custom">Custom Gradient</option>
-                                        <option value="rainbow">Rainbow 🌈</option>
-                                        <option value="red">Red ❤️</option>
-                                        <option value="blue">Blue 💙</option>
-                                        <option value="green">Green 💚</option>
-                                        <option value="purple">Purple 💜</option>
-                                        <option value="fire">Fire 🔥</option>
-                                        <option value="ocean">Ocean 🌊</option>
-                                    </select>
-                                    <div id="customGradientControls" style="display: none;">
-                                        <h5 style="margin: 8px 0 8px 0; color: #eee; font-size: 13px;">Multi-Point Text Gradient</h5>
-                                        <div id="textGradientColorPoints" class="color-points-container"></div>
-                                        <button type="button" id="addTextGradientPoint" style="width: 100%; padding: 6px; background: #4a9eff; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 11px; margin-bottom: 8px;">+ Add Color Point</button>
-                                        <div id="textGradientPreview" style="height: 30px; border-radius: 4px; margin-bottom: 10px; border: 1px solid #333; background: linear-gradient(to right, #FF0000, #00FF00, #0000FF);"></div>
-                                            </div>
-                                            </div>
-                                            </div>
-                            <div style="width: 100%; margin-top: 5px;">
-                                <label style="display: block; margin-bottom: 5px; color: #eee;">Background Gradient:</label>
-                                <div id="backgroundGradientOptions" style="margin-bottom: 10px;">
-                                    <select id="backgroundGradientType" style="width: 100%; padding: 5px; background: #222; border: 1px solid #444; color: #eee; border-radius: 4px; margin-bottom: 10px;">
-                                        <option value="">None</option>
-                                        <option value="custom">Custom Gradient</option>
-                                        <option value="rainbow">Rainbow 🌈</option>
-                                        <option value="red">Red ❤️</option>
-                                        <option value="blue">Blue 💙</option>
-                                        <option value="green">Green 💚</option>
-                                        <option value="purple">Purple 💜</option>
-                                        <option value="fire">Fire 🔥</option>
-                                        <option value="ocean">Ocean 🌊</option>
-                                    </select>
-                                    <div id="customBackgroundGradientControls" style="display: none;">
-                                        <h5 style="margin: 8px 0 8px 0; color: #eee; font-size: 13px;">Multi-Point Background Gradient</h5>
-                                        <div id="backgroundGradientColorPoints" class="color-points-container"></div>
-                                        <button type="button" id="addBackgroundGradientPoint" style="width: 100%; padding: 6px; background: #4a9eff; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 11px; margin-bottom: 8px;">+ Add Color Point</button>
-                                        <div id="backgroundGradientPreview" style="height: 30px; border-radius: 4px; margin-bottom: 10px; border: 1px solid #333; background: linear-gradient(to right, #FF0000, #00FF00, #0000FF);"></div>
-                                    </div>
-                                </div>
-                            </div>
-                            <div style="width: 100%; margin-top: 5px;">
-                                <label style="display: block; margin-bottom: 5px; color: #eee;">Text Color:</label>
-                                <input type="color" id="presetColor" style="width: 100%; padding: 5px; background: #222; border: 1px solid #444; color: #eee; border-radius: 4px;">
-                                <label style="display: flex; align-items: center; margin-top: 5px; color: #eee;">
-                                    <input type="checkbox" id="useTextColor"> Use text color
-                                </label>
-                            </div>
-                            <div style="width: 100%; margin-top: 5px;">
-                                <label style="display: block; margin-bottom: 5px; color: #eee;">Keyboard Shortcut:</label>
-                                <input type="text" id="presetShortcut" placeholder="e.g. CmdOrCtrl+B" style="width: 100%; padding: 5px; background: #222; border: 1px solid #444; color: #eee; border-radius: 4px;">
-                                <small style="color: #888; display: block; margin-top: 5px;">Use CmdOrCtrl for Command (Mac) or Control (Windows)</small>
-                            </div>
-                        </div>
-                    </div>
-                    <div style="margin-top: 15px;">
-                        <button id="savePresetBtn" class="button button--primary" style="margin-right: 10px;">Save Preset</button>
-                        <button id="cancelPresetBtn" class="button">Cancel</button>
-                    </div>
-                </div>
-                <div id="shortcutsManager" style="display: none; margin-top: 15px; border-top: 1px solid #333; padding-top: 15px;">
-                    <h4 style="margin-top: 0; color: #eee;">Keyboard Shortcuts</h4>
-                    <div id="shortcutsList" style="margin-bottom: 15px;"></div>
-                    <div style="margin-top: 15px;">
-                        <button id="closeShortcutsBtn" class="button">Close</button>
-                    </div>
-                </div>
-                <div class="formSubmitRow" style="margin-top: 20px; text-align: center;">
-                    <div class="formSubmitRow-main">
-                        <div class="formSubmitRow-bar">
-                            <button id="closePresetsModal" class="button">Close</button>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        `;
+        // Build popup DOM safely
+        buildPopupDOM(popup);
+        
+        function buildPopupDOM(popup) {
+            // For now, using innerHTML but will be replaced with safe DOM construction
+            // TODO: Replace with createElement calls
+            // Safe DOM construction helper
+            const createElement = (tag, attrs = {}, children = []) => {
+                const el = document.createElement(tag);
+                
+                if (attrs.id) el.id = attrs.id;
+                if (attrs.className) el.className = attrs.className;
+                if (attrs.type) el.type = attrs.type;
+                if (attrs.value !== undefined) el.value = attrs.value;
+                if (attrs.placeholder) el.placeholder = attrs.placeholder;
+                if (attrs.style) {
+                    if (typeof attrs.style === 'string') {
+                        el.setAttribute('style', attrs.style);
+                    } else {
+                        Object.assign(el.style, attrs.style);
+                    }
+                }
+                
+                children.forEach(child => {
+                    if (typeof child === 'string') {
+                        el.appendChild(document.createTextNode(child));
+                    } else if (child) {
+                        el.appendChild(child);
+                    }
+                });
+                
+                return el;
+            };
+
+            // Title section
+            const titleDiv = createElement('div', { className: 'overlay-title', style: 'margin-bottom: 20px;' }, [
+                createElement('h3', { style: 'margin: 0; color: #eee; font-size: 18px;' }, ['Text Format Presets'])
+            ]);
+
+            // Main body
+            const blockBody = createElement('div', { className: 'block-body', style: 'margin-bottom: 20px;' });
+
+            // Presets container row
+            blockBody.appendChild(createElement('div', { className: 'block-row', style: 'margin-bottom: 20px;' }, [
+                createElement('div', { id: 'presetsContainer', style: 'max-height:200px;overflow-y:auto;margin-bottom:20px;' })
+            ]));
+
+            // Buttons row
+            blockBody.appendChild(createElement('div', { className: 'block-row', style: 'margin-bottom: 20px;' }, [
+                createElement('button', { id: 'createPresetBtn', className: 'button button--primary', style: 'margin-right: 10px;' }, ['Create New Preset']),
+                createElement('button', { id: 'manageShortcutsBtn', className: 'button button--primary' }, ['Manage Shortcuts'])
+            ]));
+
+            // Create preset form
+            const createForm = createElement('div', { id: 'createPresetForm', style: 'display: none; margin-top: 15px; border-top: 1px solid #333; padding-top: 15px;' });
+            
+            // Preset name input
+            createForm.appendChild(createElement('div', { style: 'margin-bottom: 10px;' }, [
+                createElement('label', { style: 'display: block; margin-bottom: 5px; color: #eee;' }, ['Preset Name:']),
+                createElement('input', { type: 'text', id: 'presetName', style: 'width: 100%; padding: 5px; background: #222; border: 1px solid #444; color: #eee; border-radius: 4px;' })
+            ]));
+
+            // Format options container
+            const formatOptionsDiv = createElement('div', { style: 'margin-bottom: 10px;' }, [
+                createElement('label', { style: 'display: block; margin-bottom: 5px; color: #eee;' }, ['Format Options:'])
+            ]);
+            
+            const formatOptionsContainer = createElement('div', { style: 'display: flex; flex-wrap: wrap; gap: 10px;' });
+            
+            // Bold checkbox
+            const boldInput = createElement('input', { type: 'checkbox', id: 'presetBold' });
+            formatOptionsContainer.appendChild(createElement('label', { style: 'display: flex; align-items: center; color: #eee;' }, [
+                boldInput, ' Bold'
+            ]));
+            
+            // Italic checkbox
+            const italicInput = createElement('input', { type: 'checkbox', id: 'presetItalic' });
+            formatOptionsContainer.appendChild(createElement('label', { style: 'display: flex; align-items: center; color: #eee;' }, [
+                italicInput, ' Italic'
+            ]));
+
+            // Font size selector
+            const fontSizeDiv = createElement('div', { style: 'width: 100%; margin-top: 5px;' }, [
+                createElement('label', { style: 'display: block; margin-bottom: 5px; color: #eee;' }, ['Font Size:'])
+            ]);
+            const fontSizeSelect = createElement('select', { id: 'presetFontSize', style: 'width: 100%; padding: 5px; background: #222; border: 1px solid #444; color: #eee; border-radius: 4px;' });
+            const fontSizes = ['', '9px', '10px', '11px', '12px', '13px', '14px', '15px', '16px', '17px', '18px', '19px', '20px', '22px', '24px', '26px', '28px', '30px', '32px', '34px', '36px'];
+            fontSizes.forEach((size, index) => {
+                const option = createElement('option', { value: size }, [index === 0 ? 'Default' : size.replace('px', '')]);
+                fontSizeSelect.appendChild(option);
+            });
+            fontSizeDiv.appendChild(fontSizeSelect);
+            formatOptionsContainer.appendChild(fontSizeDiv);
+
+            // Font family selector
+            const fontFamilyDiv = createElement('div', { style: 'width: 100%; margin-top: 5px;' }, [
+                createElement('label', { style: 'display: block; margin-bottom: 5px; color: #eee;' }, ['Font Family:'])
+            ]);
+            const fontFamilySelect = createElement('select', { id: 'presetFontFamily', style: 'width: 100%; padding: 5px; background: #222; border: 1px solid #444; color: #eee; border-radius: 4px;' });
+            const fontFamilies = [
+                ['', 'Default'],
+                ["'Arial'", 'Arial'],
+                ["'Book Antiqua'", 'Book Antiqua'],
+                ["'Courier New'", 'Courier New'],
+                ["'Georgia'", 'Georgia'],
+                ['Tahoma', 'Tahoma'],
+                ["'Times New Roman'", 'Times New Roman'],
+                ["'Trebuchet MS'", 'Trebuchet MS'],
+                ["'Verdana'", 'Verdana']
+            ];
+            fontFamilies.forEach(([value, text]) => {
+                const option = createElement('option', { value }, [text]);
+                fontFamilySelect.appendChild(option);
+            });
+            fontFamilyDiv.appendChild(fontFamilySelect);
+            formatOptionsContainer.appendChild(fontFamilyDiv);
+
+            // Text gradient options
+            const textGradientDiv = createElement('div', { style: 'width: 100%; margin-top: 5px;' }, [
+                createElement('label', { style: 'display: block; margin-bottom: 5px; color: #eee;' }, ['Text Gradient:'])
+            ]);
+            const gradientOptions = createElement('div', { id: 'gradientOptions', style: 'margin-bottom: 10px;' });
+            const gradientTypeSelect = createElement('select', { id: 'gradientType', style: 'width: 100%; padding: 5px; background: #222; border: 1px solid #444; color: #eee; border-radius: 4px; margin-bottom: 10px;' });
+            const gradientTypes = [
+                ['', 'None'],
+                ['custom', 'Custom Gradient'],
+                ['rainbow', 'Rainbow 🌈'],
+                ['red', 'Red ❤️'],
+                ['blue', 'Blue 💙'],
+                ['green', 'Green 💚'],
+                ['purple', 'Purple 💜'],
+                ['fire', 'Fire 🔥'],
+                ['ocean', 'Ocean 🌊']
+            ];
+            gradientTypes.forEach(([value, text]) => {
+                const option = createElement('option', { value }, [text]);
+                gradientTypeSelect.appendChild(option);
+            });
+            gradientOptions.appendChild(gradientTypeSelect);
+            
+            const customGradientControls = createElement('div', { id: 'customGradientControls', style: 'display: none;' }, [
+                createElement('h5', { style: 'margin: 8px 0 8px 0; color: #eee; font-size: 13px;' }, ['Multi-Point Text Gradient']),
+                createElement('div', { id: 'textGradientColorPoints', className: 'color-points-container' }),
+                createElement('button', { type: 'button', id: 'addTextGradientPoint', style: 'width: 100%; padding: 6px; background: #4a9eff; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 11px; margin-bottom: 8px;' }, ['+ Add Color Point']),
+                createElement('div', { id: 'textGradientPreview', style: 'height: 30px; border-radius: 4px; margin-bottom: 10px; border: 1px solid #333; background: linear-gradient(to right, #FF0000, #00FF00, #0000FF);' })
+            ]);
+            gradientOptions.appendChild(customGradientControls);
+            textGradientDiv.appendChild(gradientOptions);
+            formatOptionsContainer.appendChild(textGradientDiv);
+
+            // Background gradient options
+            const backgroundGradientDiv = createElement('div', { style: 'width: 100%; margin-top: 5px;' }, [
+                createElement('label', { style: 'display: block; margin-bottom: 5px; color: #eee;' }, ['Background Gradient:'])
+            ]);
+            const backgroundGradientOptions = createElement('div', { id: 'backgroundGradientOptions', style: 'margin-bottom: 10px;' });
+            const backgroundGradientTypeSelect = createElement('select', { id: 'backgroundGradientType', style: 'width: 100%; padding: 5px; background: #222; border: 1px solid #444; color: #eee; border-radius: 4px; margin-bottom: 10px;' });
+            gradientTypes.forEach(([value, text]) => {
+                const option = createElement('option', { value }, [text]);
+                backgroundGradientTypeSelect.appendChild(option);
+            });
+            backgroundGradientOptions.appendChild(backgroundGradientTypeSelect);
+            
+            const customBackgroundGradientControls = createElement('div', { id: 'customBackgroundGradientControls', style: 'display: none;' }, [
+                createElement('h5', { style: 'margin: 8px 0 8px 0; color: #eee; font-size: 13px;' }, ['Multi-Point Background Gradient']),
+                createElement('div', { id: 'backgroundGradientColorPoints', className: 'color-points-container' }),
+                createElement('button', { type: 'button', id: 'addBackgroundGradientPoint', style: 'width: 100%; padding: 6px; background: #4a9eff; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 11px; margin-bottom: 8px;' }, ['+ Add Color Point']),
+                createElement('div', { id: 'backgroundGradientPreview', style: 'height: 30px; border-radius: 4px; margin-bottom: 10px; border: 1px solid #333; background: linear-gradient(to right, #FF0000, #00FF00, #0000FF);' })
+            ]);
+            backgroundGradientOptions.appendChild(customBackgroundGradientControls);
+            backgroundGradientDiv.appendChild(backgroundGradientOptions);
+            formatOptionsContainer.appendChild(backgroundGradientDiv);
+
+            // Text color options
+            const textColorDiv = createElement('div', { style: 'width: 100%; margin-top: 5px;' });
+            textColorDiv.appendChild(createElement('label', { style: 'display: block; margin-bottom: 5px; color: #eee;' }, ['Text Color:']));
+            textColorDiv.appendChild(createElement('input', { type: 'color', id: 'presetColor', style: 'width: 100%; padding: 5px; background: #222; border: 1px solid #444; color: #eee; border-radius: 4px;' }));
+            const useTextColorInput = createElement('input', { type: 'checkbox', id: 'useTextColor' });
+            textColorDiv.appendChild(createElement('label', { style: 'display: flex; align-items: center; margin-top: 5px; color: #eee;' }, [
+                useTextColorInput, ' Use text color'
+            ]));
+            formatOptionsContainer.appendChild(textColorDiv);
+
+            // Keyboard shortcut
+            const shortcutDiv = createElement('div', { style: 'width: 100%; margin-top: 5px;' }, [
+                createElement('label', { style: 'display: block; margin-bottom: 5px; color: #eee;' }, ['Keyboard Shortcut:']),
+                createElement('input', { type: 'text', id: 'presetShortcut', placeholder: 'e.g. CmdOrCtrl+B', style: 'width: 100%; padding: 5px; background: #222; border: 1px solid #444; color: #eee; border-radius: 4px;' }),
+                createElement('small', { style: 'color: #888; display: block; margin-top: 5px;' }, ['Use CmdOrCtrl for Command (Mac) or Control (Windows)'])
+            ]);
+            formatOptionsContainer.appendChild(shortcutDiv);
+            
+            formatOptionsDiv.appendChild(formatOptionsContainer);
+            createForm.appendChild(formatOptionsDiv);
+
+            // Save/Cancel buttons
+            createForm.appendChild(createElement('div', { style: 'margin-top: 15px;' }, [
+                createElement('button', { id: 'savePresetBtn', className: 'button button--primary', style: 'margin-right: 10px;' }, ['Save Preset']),
+                createElement('button', { id: 'cancelPresetBtn', className: 'button' }, ['Cancel'])
+            ]));
+            
+            blockBody.appendChild(createForm);
+
+            // Shortcuts manager
+            const shortcutsManager = createElement('div', { id: 'shortcutsManager', style: 'display: none; margin-top: 15px; border-top: 1px solid #333; padding-top: 15px;' }, [
+                createElement('h4', { style: 'margin-top: 0; color: #eee;' }, ['Keyboard Shortcuts']),
+                createElement('div', { id: 'shortcutsList', style: 'margin-bottom: 15px;' }),
+                createElement('div', { style: 'margin-top: 15px;' }, [
+                    createElement('button', { id: 'closeShortcutsBtn', className: 'button' }, ['Close'])
+                ])
+            ]);
+            blockBody.appendChild(shortcutsManager);
+
+            // Close button row
+            blockBody.appendChild(createElement('div', { className: 'formSubmitRow', style: 'margin-top: 20px; text-align: center;' }, [
+                createElement('div', { className: 'formSubmitRow-main' }, [
+                    createElement('div', { className: 'formSubmitRow-bar' }, [
+                        createElement('button', { id: 'closePresetsModal', className: 'button' }, ['Close'])
+                    ])
+                ])
+            ]));
+
+            // Add everything to popup
+            popup.appendChild(titleDiv);
+            popup.appendChild(blockBody);
         
         // Add event listeners
         modalContainer.appendChild(overlay);
@@ -731,7 +790,10 @@ function createPresetButton() {
 
     // Load presets from storage
     async function loadPresets(container) {
-        container.innerHTML = '';
+        // Clear container safely
+        while (container.firstChild) {
+            container.removeChild(container.firstChild);
+        }
         
         try {
             // Get custom presets and hidden presets from storage
@@ -753,7 +815,10 @@ function createPresetButton() {
             console.log('Hidden presets:', hiddenPresets);
             
             if (Object.keys(allPresets).length === 0) {
-                container.innerHTML = '<p style="color: #aaa; text-align: center;">No presets available.</p>';
+                const noPresetsP = document.createElement('p');
+                noPresetsP.style.cssText = 'color: #aaa; text-align: center;';
+                noPresetsP.textContent = 'No presets available.';
+                container.appendChild(noPresetsP);
                 return;
             }
             
@@ -785,19 +850,58 @@ function createPresetButton() {
                 const isDefaultPreset = TEXT_PRESETS[id] !== undefined;
                 const presetType = isDefaultPreset ? '<span style="color: #666; font-size: 11px;">(default)</span>' : '<span style="color: #4a9eff; font-size: 11px;">(custom)</span>';
                 
-                presetCard.innerHTML = `
-                    <div style="display: flex; align-items: center; gap: 10px;">
-                        <i class="${escapeHtml(preset.icon)}" style="font-size: 16px;"></i>
-                        <span>${escapeHtml(preset.name)}</span>
-                        ${presetType}
-                        ${shortcutText}
-                    </div>
-                    <div class="preset-actions">
-                        <button class="apply-preset button button--primary" data-preset-id="${escapeHtml(id)}" style="margin-right: 5px;">Apply</button>
-                        <button class="edit-preset button" data-preset-id="${escapeHtml(id)}" style="margin-right: 5px;">Edit</button>
-                        <button class="delete-preset button button--cta" data-preset-id="${escapeHtml(id)}">Delete</button>
-                    </div>
-                `;
+                // Build preset card DOM safely
+                const cardDiv = document.createElement('div');
+                cardDiv.style.cssText = 'display: flex; align-items: center; gap: 10px;';
+                
+                const icon = document.createElement('i');
+                icon.className = preset.icon || 'fas fa-text';
+                icon.style.fontSize = '16px';
+                
+                const nameSpan = document.createElement('span');
+                nameSpan.textContent = preset.name;
+                
+                const typeSpan = document.createElement('span');
+                typeSpan.style.cssText = isDefaultPreset ? 'color: #666; font-size: 11px;' : 'color: #4a9eff; font-size: 11px;';
+                typeSpan.textContent = isDefaultPreset ? '(default)' : '(custom)';
+                
+                cardDiv.appendChild(icon);
+                cardDiv.appendChild(nameSpan);
+                cardDiv.appendChild(typeSpan);
+                
+                if (preset.shortcut) {
+                    const shortcutSpan = document.createElement('span');
+                    shortcutSpan.style.cssText = 'color: #888; font-size: 11px; margin-left: 5px;';
+                    shortcutSpan.textContent = `[${preset.shortcut}]`;
+                    cardDiv.appendChild(shortcutSpan);
+                }
+                
+                const actionsDiv = document.createElement('div');
+                actionsDiv.className = 'preset-actions';
+                
+                const applyBtn = document.createElement('button');
+                applyBtn.className = 'apply-preset button button--primary';
+                applyBtn.dataset.presetId = id;
+                applyBtn.style.marginRight = '5px';
+                applyBtn.textContent = 'Apply';
+                
+                const editBtn = document.createElement('button');
+                editBtn.className = 'edit-preset button';
+                editBtn.dataset.presetId = id;
+                editBtn.style.marginRight = '5px';
+                editBtn.textContent = 'Edit';
+                
+                const deleteBtn = document.createElement('button');
+                deleteBtn.className = 'delete-preset button button--cta';
+                deleteBtn.dataset.presetId = id;
+                deleteBtn.textContent = 'Delete';
+                
+                actionsDiv.appendChild(applyBtn);
+                actionsDiv.appendChild(editBtn);
+                actionsDiv.appendChild(deleteBtn);
+                
+                presetCard.appendChild(cardDiv);
+                presetCard.appendChild(actionsDiv);
                 
                 container.appendChild(presetCard);
                 
@@ -812,8 +916,8 @@ function createPresetButton() {
                 });
                 
                 // Delete preset button (now available for all presets)
-                const deleteBtn = presetCard.querySelector('.delete-preset');
-                deleteBtn.addEventListener('click', () => {
+                const deleteButton = presetCard.querySelector('.delete-preset');
+                deleteButton.addEventListener('click', () => {
                     deletePreset(id, () => {
                         loadPresets(container);
                     });
@@ -822,7 +926,10 @@ function createPresetButton() {
             
         } catch (error) {
             console.error('Error loading presets:', error);
-            container.innerHTML = '<p style="color: #aaa; text-align: center;">Error loading presets. Please refresh the page.</p>';
+            const errorP = document.createElement('p');
+            errorP.style.cssText = 'color: #aaa; text-align: center;';
+            errorP.textContent = 'Error loading presets. Please refresh the page.';
+            container.appendChild(errorP);
         }
     }
 
@@ -1043,7 +1150,10 @@ function createPresetButton() {
 
     // Load shortcuts list
     async function loadShortcutsList(container) {
-        container.innerHTML = '';
+        // Clear container safely
+        while (container.firstChild) {
+            container.removeChild(container.firstChild);
+        }
         
         try {
             // Get custom presets and hidden presets from storage
@@ -1062,7 +1172,10 @@ function createPresetButton() {
             const allPresets = { ...visibleDefaults, ...customPresets };
             
             if (Object.keys(allPresets).length === 0) {
-                container.innerHTML = '<p style="color: #aaa; text-align: center;">No presets with shortcuts found.</p>';
+                const noShortcutsP = document.createElement('p');
+                noShortcutsP.style.cssText = 'color: #aaa; text-align: center;';
+                noShortcutsP.textContent = 'No presets with shortcuts found.';
+                container.appendChild(noShortcutsP);
                 return;
             }
             
@@ -1090,14 +1203,25 @@ function createPresetButton() {
                 const isDefaultPreset = TEXT_PRESETS[id] !== undefined;
                 const presetType = isDefaultPreset ? ' (default)' : ' (custom)';
                 
-                shortcutItem.innerHTML = `
-                    <div>
-                        <span style="font-weight: bold;">${escapeHtml(preset.name)}${escapeHtml(presetType)}</span>
-                    </div>
-                    <div>
-                        <input type="text" class="shortcut-input" value="${escapeHtml(preset.shortcut)}" data-preset-id="${escapeHtml(id)}" style="width: 150px; padding: 4px; background: #1a1a1a; border: 1px solid #444; color: #eee; border-radius: 4px;">
-                    </div>
-                `;
+                // Build shortcut item DOM safely
+                const nameDiv = document.createElement('div');
+                const nameSpan = document.createElement('span');
+                nameSpan.style.fontWeight = 'bold';
+                nameSpan.textContent = preset.name + presetType;
+                nameDiv.appendChild(nameSpan);
+                
+                const inputDiv = document.createElement('div');
+                const shortcutInput = document.createElement('input');
+                shortcutInput.type = 'text';
+                shortcutInput.className = 'shortcut-input';
+                shortcutInput.value = preset.shortcut || '';
+                shortcutInput.dataset.presetId = id;
+                shortcutInput.style.cssText = 'width: 150px; padding: 4px; background: #1a1a1a; border: 1px solid #444; color: #eee; border-radius: 4px;';
+                inputDiv.appendChild(shortcutInput);
+                
+                shortcutItem.appendChild(nameDiv);
+                shortcutItem.appendChild(inputDiv);
+
                 
                 shortcutsList.appendChild(shortcutItem);
                 
@@ -1111,7 +1235,10 @@ function createPresetButton() {
             container.appendChild(shortcutsList);
         } catch (error) {
             console.error('Error loading shortcuts:', error);
-            container.innerHTML = '<p style="color: #aaa; text-align: center;">Error loading shortcuts. Please refresh the page.</p>';
+            const shortcutErrorP = document.createElement('p');
+            shortcutErrorP.style.cssText = 'color: #aaa; text-align: center;';
+            shortcutErrorP.textContent = 'Error loading shortcuts. Please refresh the page.';
+            container.appendChild(shortcutErrorP);
         }
     }
 
@@ -1549,9 +1676,29 @@ function createPresetButton() {
 
             console.log('Final formatted text:', formattedText);
 
-            // Delete selected text and insert formatted text
+            // Delete selected text and insert formatted text safely
             document.execCommand('delete', false);
-            document.execCommand('insertHTML', false, formattedText);
+            
+            // Use safe insertion method instead of insertHTML to prevent XSS
+            if (window.BetterLooksmaxSanitizer) {
+                // Safe insertion of BBCode formatted text
+                const selection = window.getSelection();
+                if (selection.rangeCount > 0) {
+                    const range = selection.getRangeAt(0);
+                    // Insert as text node to preserve BBCode without HTML interpretation
+                    const textNode = document.createTextNode(formattedText);
+                    range.insertNode(textNode);
+                    
+                    // Move cursor to end of inserted text
+                    range.setStartAfter(textNode);
+                    range.collapse(true);
+                    selection.removeAllRanges();
+                    selection.addRange(range);
+                }
+            } else {
+                // Fallback: insert as text (safe but may not work in all editors)
+                document.execCommand('insertText', false, formattedText);
+            }
 
             // Close the modal if it exists
             const modalContainer = document.getElementById('presetsModalContainer');
@@ -1743,4 +1890,6 @@ function createPresetButton() {
     } else {
         initializePresets();
     }
+
+}
 })();
