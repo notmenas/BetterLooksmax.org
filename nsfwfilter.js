@@ -114,29 +114,58 @@
 
     function findButtonGroup() {
         // Try different possible selectors for the button group
-        return document.querySelector('.block-outer-opposite .buttonGroup') || 
-               document.querySelector('.block-outer .buttonGroup') ||
-               document.querySelector('.block-outer-opposite')?.querySelector('.buttonGroup') ||
-               document.querySelector('.block-outer')?.querySelector('.buttonGroup') ||
-               document.querySelector('.buttonGroup');
+        const selectors = [
+            '.block-outer-opposite .buttonGroup',
+            '.block-outer .buttonGroup',
+            '.p-body-header .buttonGroup',
+            '.p-title .buttonGroup',
+            '.p-description .buttonGroup',
+            '.block-container .buttonGroup',
+            '.block-header .buttonGroup',
+            '.buttonGroup'
+        ];
+        
+        for (const selector of selectors) {
+            const group = document.querySelector(selector);
+            if (group) {
+                console.log('[NSFWFilter] Found button group with selector:', selector);
+                return group;
+            }
+        }
+        
+        // Try finding any element with buttonGroup class that's visible
+        const allGroups = document.querySelectorAll('.buttonGroup');
+        for (const group of allGroups) {
+            const rect = group.getBoundingClientRect();
+            if (rect.width > 0 && rect.height > 0) {
+                console.log('[NSFWFilter] Found visible button group');
+                return group;
+            }
+        }
+        
+        return null;
     }
 
-    // Optimized button check using caching
-    function checkAndAddButtonOptimized() {
+    // Optimized button check using caching (for dynamic updates only)
+    function checkAndAddButtonOptimized(skipThrottle = false) {
         if (!nsfwElementCache) {
-            checkAndAddButton(); // Fallback
+            checkAndAddButton(skipThrottle); // Fallback
             return;
         }
         
-        const now = Date.now();
-        if (now - lastCheckTime < CHECK_INTERVAL) {
-            return;
+        // Skip throttle for initial creation
+        if (!skipThrottle) {
+            const now = Date.now();
+            if (now - lastCheckTime < CHECK_INTERVAL) {
+                return;
+            }
+            lastCheckTime = now;
         }
-        lastCheckTime = now;
 
         // Check if button already exists
-        const existingButton = nsfwElementCache.getSingle(`#${BUTTON_ID}`);
+        const existingButton = document.getElementById(BUTTON_ID);
         if (existingButton) {
+            console.log('[NSFWFilter] Button already exists');
             return;
         }
 
@@ -144,30 +173,37 @@
         const isThread = window.location.pathname.includes('/threads/');
         const isForum = window.location.pathname.includes('/forums/');
         if (!isThread && !isForum) {
+            console.log('[NSFWFilter] Not on a thread or forum page');
             return;
         }
 
-        // Find the button group with caching
-        const buttonGroup = nsfwElementCache.getSingle('.block-outer-opposite .buttonGroup') ||
-                          nsfwElementCache.getSingle('.block-outer .buttonGroup') ||
-                          nsfwElementCache.getSingle('.buttonGroup');
+        // Find the button group - don't cache negative results
+        const buttonGroup = document.querySelector('.block-outer-opposite .buttonGroup') ||
+                          document.querySelector('.block-outer .buttonGroup') ||
+                          document.querySelector('.buttonGroup');
         if (!buttonGroup) {
+            console.log('[NSFWFilter] Button group not found, will retry');
             return;
         }
         
+        console.log('[NSFWFilter] Creating button in group:', buttonGroup);
         createAndAddButton(buttonGroup);
     }
     
     // Original function as fallback
-    function checkAndAddButton() {
-        const now = Date.now();
-        if (now - lastCheckTime < CHECK_INTERVAL) {
-            return;
+    function checkAndAddButton(skipThrottle = false) {
+        // Skip throttle for initial creation
+        if (!skipThrottle) {
+            const now = Date.now();
+            if (now - lastCheckTime < CHECK_INTERVAL) {
+                return;
+            }
+            lastCheckTime = now;
         }
-        lastCheckTime = now;
 
         // Check if button already exists
         if (document.getElementById(BUTTON_ID)) {
+            console.log('[NSFWFilter] Button already exists');
             return;
         }
 
@@ -175,20 +211,24 @@
         const isThread = window.location.pathname.includes('/threads/');
         const isForum = window.location.pathname.includes('/forums/');
         if (!isThread && !isForum) {
+            console.log('[NSFWFilter] Not on a thread or forum page');
             return;
         }
 
         // Find the button group
         const buttonGroup = findButtonGroup();
         if (!buttonGroup) {
+            console.log('[NSFWFilter] Button group not found, will retry');
             return;
         }
         
+        console.log('[NSFWFilter] Creating button in group:', buttonGroup);
         createAndAddButton(buttonGroup);
     }
     
     function createAndAddButton(buttonGroup) {
-
+        console.log('[NSFWFilter] Creating NSFW filter button');
+        
         // Create the button
         const button = document.createElement('a');
         button.href = '#';
@@ -298,8 +338,6 @@
         // Handle thread items with caching
         const threadItems = nsfwElementCache.get('.structItem');
         threadItems.forEach(item => {
-            if (processedElements.has(item) && !active) return;
-            
             const title = item.querySelector('.structItem-title')?.textContent;
             const content = item.querySelector('.structItem-excerpt')?.textContent;
             
@@ -308,10 +346,11 @@
                     item.style.display = active ? 'none' : '';
                     if (active) {
                         hiddenElements.add(item);
+                        processedElements.add(item);
                     } else {
                         hiddenElements.delete(item);
+                        processedElements.delete(item);
                     }
-                    processedElements.add(item);
                 });
             }
         });
@@ -319,18 +358,17 @@
         // Handle messages with caching
         const messages = nsfwElementCache.get('.message');
         messages.forEach(message => {
-            if (processedElements.has(message) && !active) return;
-            
             const content = message.querySelector('.message-userContent')?.textContent;
             if (isNSFWContent(content)) {
                 operationsToProcess.push(() => {
                     message.style.display = active ? 'none' : '';
                     if (active) {
                         hiddenElements.add(message);
+                        processedElements.add(message);
                     } else {
                         hiddenElements.delete(message);
+                        processedElements.delete(message);
                     }
-                    processedElements.add(message);
                 });
             }
         });
@@ -338,25 +376,32 @@
         // Handle posts with caching
         const posts = nsfwElementCache.get('.message--post');
         posts.forEach(post => {
-            if (processedElements.has(post) && !active) return;
-            
             const content = post.querySelector('.message-content')?.textContent;
             if (isNSFWContent(content)) {
                 operationsToProcess.push(() => {
                     post.style.display = active ? 'none' : '';
                     if (active) {
                         hiddenElements.add(post);
+                        processedElements.add(post);
                     } else {
                         hiddenElements.delete(post);
+                        processedElements.delete(post);
                     }
-                    processedElements.add(post);
                 });
             }
         });
 
         // Batch DOM operations
-        if (operationsToProcess.length > 0 && nsfwPerformanceUtils) {
-            nsfwPerformanceUtils.batchDOMOperations(operationsToProcess);
+        if (operationsToProcess.length > 0) {
+            console.log(`[NSFWFilter] Processing ${operationsToProcess.length} NSFW elements`);
+            if (nsfwPerformanceUtils) {
+                nsfwPerformanceUtils.batchDOMOperations(operationsToProcess);
+            } else {
+                // Fallback: execute operations directly
+                operationsToProcess.forEach(op => op());
+            }
+        } else {
+            console.log('[NSFWFilter] No NSFW content found to filter');
         }
     }
     
@@ -522,12 +567,48 @@
         }
     }
     
-    // Initial check
-    if (nsfwThrottledFilterOperations) {
-        nsfwThrottledFilterOperations.checkButton();
-    } else {
-        checkAndAddButton();
+    // Initial check - add multiple attempts to ensure button is created
+    function performInitialCheck() {
+        console.log('[NSFWFilter] Performing initial button check');
+        // Always skip throttle for initial checks
+        checkAndAddButton(true);
     }
+    
+    // Function to retry button creation with backoff
+    function retryButtonCreation(attempts = 0, maxAttempts = 10) {
+        if (attempts >= maxAttempts) {
+            console.log('[NSFWFilter] Max retry attempts reached');
+            return;
+        }
+        
+        if (document.getElementById(BUTTON_ID)) {
+            console.log('[NSFWFilter] Button found after retry');
+            return;
+        }
+        
+        performInitialCheck();
+        
+        // Exponential backoff: 100ms, 200ms, 400ms, etc.
+        const delay = Math.min(100 * Math.pow(2, attempts), 3000);
+        setTimeout(() => retryButtonCreation(attempts + 1, maxAttempts), delay);
+    }
+    
+    // Start retry mechanism
+    retryButtonCreation();
+    
+    // Also check after DOM is ready
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', performInitialCheck);
+    } else {
+        // DOM is already loaded, check again after a short delay
+        setTimeout(performInitialCheck, 100);
+    }
+    
+    // Additional check after page fully loads
+    window.addEventListener('load', () => {
+        console.log('[NSFWFilter] Page loaded, final button check');
+        performInitialCheck();
+    });
 
     // Initialize observer
     initializeNSFWObserver();
@@ -548,8 +629,9 @@
     // Initialize message router registration
     registerWithMessageRouter();
     
-    // Add cleanup on page unload
-    window.addEventListener('beforeunload', cleanup);
+    // Add cleanup on page unload - removed to prevent button disappearing
+    // The cleanup will happen when the page actually unloads/navigates away
+    // window.addEventListener('beforeunload', cleanup);
     
     // Expose functions for testing
     if (typeof global !== 'undefined') {

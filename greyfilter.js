@@ -199,7 +199,7 @@ function hideGreyThreadsOptimized() {
     const operationsToHide = [];
     
     threadContainers.forEach(thread => {
-        if (processedElements.has(thread)) return;
+        // Don't skip already processed elements - they may need to be re-hidden
         
         try {
             const structItemParts = thread.querySelector('.structItem-parts');
@@ -215,8 +215,6 @@ function hideGreyThreadsOptimized() {
                             window.SecurityUtils.escapeText(greyUser.textContent) : greyUser.textContent;
                         console.log('Hiding thread started by grey user:', sanitizedUsername);
                     });
-                } else {
-                    processedElements.add(thread);
                 }
             }
         } catch (error) {
@@ -270,7 +268,7 @@ function hideGreyPostsOptimized() {
     const operationsToHide = [];
     
     messageContainers.forEach(message => {
-        if (processedElements.has(message)) return;
+        // Don't skip already processed elements - they may need to be re-hidden
         
         try {
             const greyUser = message.querySelector(greyUserSelectors);
@@ -284,8 +282,6 @@ function hideGreyPostsOptimized() {
                         window.SecurityUtils.escapeText(greyUser.textContent) : greyUser.textContent;
                     console.log('Hiding post by grey user:', sanitizedUsername);
                 });
-            } else {
-                processedElements.add(message);
             }
         } catch (error) {
             console.error('Error processing message:', error);
@@ -335,7 +331,7 @@ function hideGreyMembersOptimized() {
     const operationsToHide = [];
     
     memberListItems.forEach(item => {
-        if (processedElements.has(item)) return;
+        // Don't skip already processed elements - they may need to be re-hidden
         
         try {
             const greyUser = item.querySelector(greyUserSelectors);
@@ -350,8 +346,6 @@ function hideGreyMembersOptimized() {
                         window.SecurityUtils.escapeText(greyUser.textContent) : greyUser.textContent;
                     console.log('Hiding grey member:', sanitizedUsername);
                 });
-            } else {
-                processedElements.add(item);
             }
         } catch (error) {
             console.error('Error processing member list item:', error);
@@ -478,10 +472,12 @@ function addGreyUsersButton() {
     if (!navGroup) {
         if (addGreyUsersButtonRetries < MAX_RETRIES) {
             addGreyUsersButtonRetries++;
-            console.log(`Navigation group not found, retry ${addGreyUsersButtonRetries}/${MAX_RETRIES}...`);
-            setTimeout(addGreyUsersButton, 1000);
+            // Exponential backoff: 100ms, 200ms, 400ms, etc.
+            const delay = Math.min(100 * Math.pow(2, addGreyUsersButtonRetries - 1), 3000);
+            console.log(`[GreyFilter] Navigation group not found, retry ${addGreyUsersButtonRetries}/${MAX_RETRIES} in ${delay}ms...`);
+            setTimeout(addGreyUsersButton, delay);
         } else {
-            console.log('Max retries reached, stopping attempts to add grey users button');
+            console.log('[GreyFilter] Max retries reached, stopping attempts to add grey users button');
         }
         return;
     }
@@ -712,20 +708,32 @@ function cleanup() {
 // Add cleanup on page unload
 window.addEventListener('beforeunload', cleanup);
 
-// Initialize on DOM ready
-if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', () => {
-        registerWithMessageRouter();
-        addGreyUsersButton();
-        initializeGreyObserver();
-        navObserver.observe(document.body, { childList: true, subtree: true });
-    });
-} else {
+// Function to perform initial setup
+function performInitialSetup() {
+    console.log('[GreyFilter] Performing initial setup');
     registerWithMessageRouter();
     addGreyUsersButton();
     initializeGreyObserver();
-    navObserver.observe(document.body, { childList: true, subtree: true });
+    if (document.body) {
+        navObserver.observe(document.body, { childList: true, subtree: true });
+    }
 }
+
+// Initialize on DOM ready
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', performInitialSetup);
+} else {
+    // DOM is already loaded
+    performInitialSetup();
+    // Also retry after a short delay to ensure elements are available
+    setTimeout(addGreyUsersButton, 100);
+}
+
+// Additional check after page fully loads
+window.addEventListener('load', () => {
+    console.log('[GreyFilter] Page loaded, final button check');
+    addGreyUsersButton();
+});
 
 // Expose functions for testing
 if (typeof global !== 'undefined') {

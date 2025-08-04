@@ -69,10 +69,10 @@ function initPerformanceUtils() {
         opEventManager = new opPerformanceUtils.EventManager();
         
         // Create throttled operations
+        // NOTE: Don't throttle getOPUsername as it needs to return a value synchronously
         opThrottledOperations = {
             togglePosts: opPerformanceUtils.throttle(toggleOPPostsOptimized, 250),
-            ensureButton: opPerformanceUtils.throttle(ensureButtonAddedOptimized, 300),
-            getOPUsername: opPerformanceUtils.throttle(getOPUsernameOptimized, 500)
+            ensureButton: opPerformanceUtils.throttle(ensureButtonAddedOptimized, 300)
         };
         
         console.log('[OPFilter] Performance utilities initialized');
@@ -111,21 +111,24 @@ function getOPUsernameOptimized() {
         return getOPUsername(); // Fallback
     }
     
-    // Look for OP indicator using cached elements
+    console.log('[OPFilter] Getting OP username (optimized)...');
+    
+    // Method 1: Look for OP indicator (original method from first commit)
     const opIcons = opElementCache.get('i[title="OP"]');
     for (const opIcon of opIcons) {
+        // IMPORTANT: Original code looked for 'li' parent, not message/post container
         const listItem = opIcon.closest('li');
         if (listItem) {
             const usernameElement = listItem.querySelector('.username');
             if (usernameElement) {
                 cachedOPUsername = usernameElement.textContent.trim();
-                console.log('[OPFilter] Found OP username (optimized):', cachedOPUsername);
+                console.log('[OPFilter] Found OP username from OP indicator in li (optimized):', cachedOPUsername);
                 return cachedOPUsername;
             }
         }
     }
 
-    // Fallback to first post if OP indicator not found
+    // Method 2: Fallback to first post if OP indicator not found (original fallback)
     const firstPost = opElementCache.getSingle('.message--post');
     if (firstPost) {
         const usernameElement = firstPost.querySelector('.username');
@@ -136,7 +139,8 @@ function getOPUsernameOptimized() {
         }
     }
 
-    return null;
+    console.warn('[OPFilter] Could not find OP username with optimized methods, trying fallback');
+    return getOPUsername(); // Use fallback method as last resort
 }
 
 // Original function as fallback
@@ -146,41 +150,88 @@ function getOPUsername() {
     }
     
     console.log('[OPFilter] Getting OP username (fallback)...');
-    // Look for OP indicator using more efficient selector
+    
+    // Method 1: Look for OP indicator badge (original method from first commit)
     const opIcons = document.querySelectorAll('i[title="OP"]');
+    console.log('[OPFilter] Found OP indicators:', opIcons.length);
     for (let i = 0; i < opIcons.length; i++) {
         const opIcon = opIcons[i];
+        // IMPORTANT: Original code looked for 'li' parent, not message/post container
         const listItem = opIcon.closest('li');
         if (listItem) {
             const usernameElement = listItem.querySelector('.username');
             if (usernameElement) {
                 cachedOPUsername = usernameElement.textContent.trim();
+                console.log('[OPFilter] Found OP username from OP indicator in li:', cachedOPUsername);
                 return cachedOPUsername;
             }
         }
     }
 
-    // Fallback to first post if OP indicator not found
+    // Method 2: Fallback to first post if OP indicator not found (original fallback)
     const firstPost = document.querySelector('.message--post');
     if (firstPost) {
         const usernameElement = firstPost.querySelector('.username');
         if (usernameElement) {
             cachedOPUsername = usernameElement.textContent.trim();
+            console.log('[OPFilter] Found OP username from first post:', cachedOPUsername);
             return cachedOPUsername;
         }
     }
 
+    // Method 3: Try additional selectors for different forum layouts
+    const alternativeFirstPost = document.querySelector('article.message:first-of-type, .block-container .message:first-of-type');
+    if (alternativeFirstPost) {
+        // Try multiple selectors for username element
+        const usernameSelectors = [
+            '.username',
+            '.message-name a',
+            '[itemprop="name"]',
+            '.message-userDetails a[href*="/members/"]',
+            '.message-user a.username',
+            'h4.message-name a'
+        ];
+        
+        for (const selector of usernameSelectors) {
+            const usernameElement = alternativeFirstPost.querySelector(selector);
+            if (usernameElement) {
+                cachedOPUsername = usernameElement.textContent.trim();
+                console.log('[OPFilter] Found OP username from first post using selector:', selector, '=', cachedOPUsername);
+                return cachedOPUsername;
+            }
+        }
+    }
+
+    // Method 4: Look for thread starter info in breadcrumb or header
+    const threadStarter = document.querySelector('.p-description a.username, .p-breadcrumbs a.username');
+    if (threadStarter) {
+        cachedOPUsername = threadStarter.textContent.trim();
+        console.log('[OPFilter] Found OP username from thread info:', cachedOPUsername);
+        return cachedOPUsername;
+    }
+
+    console.warn('[OPFilter] Could not find OP username with any method');
     return null;
 }
 
 // Optimized toggle function using performance utilities
 function toggleOPPostsOptimized() {
-    const opUsername = opThrottledOperations ? 
-        opThrottledOperations.getOPUsername() : 
-        (opElementCache ? getOPUsernameOptimized() : getOPUsername());
+    // Don't use throttled operation for getting username as it needs to return immediately
+    const opUsername = opElementCache ? getOPUsernameOptimized() : getOPUsername();
     
     if (!opUsername) {
         console.warn('[OPFilter] No OP username found');
+        // Show user-friendly alert
+        const button = document.querySelector('#op-filter-button');
+        if (button) {
+            // Flash the button to indicate error
+            const originalColor = button.style.backgroundColor;
+            button.style.backgroundColor = '#ff4444';
+            button.style.transition = 'background-color 0.3s';
+            setTimeout(() => {
+                button.style.backgroundColor = originalColor;
+            }, 500);
+        }
         return;
     }
 
@@ -267,21 +318,65 @@ function updateButtonState() {
 // Original function as fallback
 function toggleOPPosts() {
     const opUsername = getOPUsername();
-    if (!opUsername) return;
+    if (!opUsername) {
+        console.warn('[OPFilter] Cannot toggle - no OP username found');
+        // Show user-friendly alert
+        const button = document.querySelector('#op-filter-button');
+        if (button) {
+            // Flash the button to indicate error
+            const originalColor = button.style.backgroundColor;
+            button.style.backgroundColor = '#ff4444';
+            button.style.transition = 'background-color 0.3s';
+            setTimeout(() => {
+                button.style.backgroundColor = originalColor;
+            }, 500);
+        }
+        return;
+    }
 
     isOPOnly = !isOPOnly;
     console.log(`[OPFilter] Toggling OP filter (fallback): ${isOPOnly}`);
     
     updateButtonState();
 
-    const posts = document.querySelectorAll('.message--post');
+    // Try multiple selectors for posts
+    const postSelectors = ['.message--post', 'article.message', '.block-container .message'];
+    let posts = [];
+    for (const selector of postSelectors) {
+        posts = document.querySelectorAll(selector);
+        if (posts.length > 0) {
+            console.log(`[OPFilter] Found posts using selector: ${selector}`);
+            break;
+        }
+    }
+
+    if (posts.length === 0) {
+        console.warn('[OPFilter] No posts found to filter');
+        return;
+    }
+
     let visibleCount = 0;
     let hiddenCount = 0;
 
     // Use for loop for better performance with early exit
     for (let i = 0; i < posts.length; i++) {
         const post = posts[i];
-        const usernameElement = post.querySelector('.username');
+        // Try multiple username selectors
+        const usernameSelectors = [
+            '.username',
+            '.message-name',
+            '[itemprop="name"]',
+            '.message-userDetails a[href*="/members/"]',
+            '.message-user a.username',
+            'h4.message-name a'
+        ];
+        
+        let usernameElement = null;
+        for (const selector of usernameSelectors) {
+            usernameElement = post.querySelector(selector);
+            if (usernameElement) break;
+        }
+        
         if (usernameElement) {
             const isOP = usernameElement.textContent.trim() === opUsername;
             if (isOPOnly) {

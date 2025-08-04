@@ -92,12 +92,44 @@ jobs:
         # Create build directories
         mkdir -p dist/chrome dist/firefox
         
-        # Copy files function
+        # Copy files function (only essential extension files)
         copy_files() {
           local dest="$1"
-          cp *.js "$dest/"
+          
+          # Copy essential JavaScript files (exclude test configs and dev files)
+          essential_js_files=(
+            "background.js"
+            "browser-api.js" 
+            "content.js"
+            "sanitizer.js"
+            "greyfilter.js"
+            "nsfwfilter.js"
+            "opfilter.js"
+            "publicmode.js"
+            "quickreply.js"
+            "text-presets.js"
+            "timer.js"
+            "security-utils.js"
+            "storage-validator.js"
+            "performance-utils.js"
+            "message-constants.js"
+            "custom-upload.js"
+            "button-styles.js"
+            "privacy-dropdown.js"
+            "debug-buttons.js"
+          )
+          
+          for file in "${essential_js_files[@]}"; do
+            if [ -f "$file" ]; then
+              cp "$file" "$dest/"
+            fi
+          done
+          
+          # Copy directories
           cp -r popup "$dest/"
           cp -r libs "$dest/"
+          
+          # Copy icon if exists
           [ -f "icon.png" ] && cp icon.png "$dest/"
         }
         
